@@ -99,9 +99,6 @@ export async function ejecutarDeclaraguate(datos: DatosDeclaraguate) {
     await formulario.locator('[id="mainForm:c25"]').fill(datos.linea);
     await formulario.locator('[id="mainForm:c26"]').fill(datos.modelo);
 
-    // Continúa aquí con los demás campos y el envío.
-    // Antes de enviar definitivamente, valida todos los datos.
-
     return {
       exitoso: true,
       mensaje: 'Formulario llenado correctamente'
