@@ -1,10 +1,14 @@
 import { Router, type Router as ExpressRouter } from "express";
 import type { ResultSetHeader } from "mysql2";
 import pool from "../config/database.js";
+import { ejecutarDeclaraguate } from "../services/declaraguate.service.js";
+import type { DatosDeclaraguate } from "../interfaces/capsolver.interface.js";
 
 const router: ExpressRouter = Router();
 
 router.post("/", async (req, res) => {
+  console.log("Datos recibidos para registrar motocicleta:", req.body);
+  
   try {
     const {
       CUIdCustomer,
@@ -53,6 +57,23 @@ router.post("/", async (req, res) => {
         MONumberInvoice,
       ]
     );
+
+    try{
+      const datos: DatosDeclaraguate = {
+        tipoVehiculo: 'particular',
+        nit: `${CUIdCustomer}`,
+        marca: MOBrand,
+        linea: MOModel,
+        modelo: MOYear,
+      }
+      const resultado = await ejecutarDeclaraguate(
+        datos as DatosDeclaraguate
+      );
+
+      console.log("Resultado de ejecutarDeclaraguate:", resultado);
+    }catch (error: unknown) {
+      console.error("Error al ejecutar Declaraguate:", error);
+    }
 
     res.status(201).json({
       message: "Motocicleta registrada correctamente",
