@@ -1,8 +1,7 @@
 import { Router, type Router as ExpressRouter } from "express";
-import type { ResultSetHeader } from "mysql2";
-import pool from "../config/database.js";
 import { ejecutarDeclaraguate } from "../services/declaraguate.service.js";
 import type { DatosDeclaraguate } from "../interfaces/capsolver.interface.js";
+import { addMotorcycle, getClientByNit } from "../services/database.service.js";
 
 const router: ExpressRouter = Router();
 
@@ -25,43 +24,36 @@ router.post("/", async (req, res) => {
       MONumberInvoice,
     } = req.body;
 
-    const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO MOTORCYCLES
-      (
-        CUIdCustomer,
-        MOPlate,
-        MOBrand,
-        MOModel,
-        MOYear,
-        MOColor,
-        MOCilindraje,
-        MOVin,
-        MOMiles,
-        MOChassis,
-        MOSerieInvoice,
-        MONumberInvoice
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        CUIdCustomer,
-        MOPlate,
-        MOBrand,
-        MOModel,
-        MOYear,
-        MOColor,
-        MOCilindraje,
-        MOVin,
-        MOMiles,
-        MOChassis,
-        MOSerieInvoice,
-        MONumberInvoice,
-      ]
+    const client = await getClientByNit(req.body.CUIdCustomer);
+
+    if (!client || client.length === 0) {
+      return res.status(404).json({
+        message: "Cliente no encontrado. No se puede registrar la motocicleta.",
+      });
+    }
+    
+    console.log('Cliente encontrado:', client);
+
+    const result = await addMotorcycle(
+      client[0].CUIdCustomer,
+      MOPlate,
+      MOBrand,
+      MOModel,
+      MOYear,
+      MOColor,
+      MOCilindraje,
+      MOVin,
+      MOMiles,
+      MOChassis,
+      MOSerieInvoice,
+      MONumberInvoice
     );
 
     try{
+      
       const datos: DatosDeclaraguate = {
         tipoVehiculo: 'particular',
-        nit: `${CUIdCustomer}`,
+        nit: `${client.CUNIT}`,
         marca: MOBrand,
         linea: MOModel,
         modelo: MOYear,
