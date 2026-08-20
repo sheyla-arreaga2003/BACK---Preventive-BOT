@@ -1,7 +1,7 @@
 import { Router, type Router as ExpressRouter } from "express";
 import { ejecutarDeclaraguate } from "../services/declaraguate.service.js";
 import type { DatosDeclaraguate } from "../interfaces/capsolver.interface.js";
-import { addMotorcycle, getClientByNit } from "../services/database.service.js";
+import { addMotorcycle, getClientByNit, addProcess } from "../services/database.service.js";
 
 const router: ExpressRouter = Router();
 
@@ -63,6 +63,10 @@ router.post("/", async (req, res) => {
       );
 
       console.log("Resultado de ejecutarDeclaraguate:", resultado);
+
+      const observations = `Declaraguate ejecutado con éxito. Mensaje: ${resultado.mensaje}`;
+
+      const processResult = await addProcess(result.insertId, observations);
     }catch (error: unknown) {
       console.error("Error al ejecutar Declaraguate:", error);
     }
