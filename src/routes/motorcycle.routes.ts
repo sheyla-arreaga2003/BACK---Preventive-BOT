@@ -1,13 +1,16 @@
 import { Router, type Router as ExpressRouter } from "express";
-import { ejecutarDeclaraguate } from "../services/declaraguate.service.js";
-import type { DatosDeclaraguate } from "../interfaces/capsolver.interface.js";
-import { addMotorcycle, getClientByNit, addProcess } from "../services/database.service.js";
+import { executeDeclaraguate } from "../services/declaraguate.service.js";
+import type { DeclaraguateData } from "../interfaces/capsolver.interface.js";
+import {
+  addMotorcycle,
+  getClientByNit,
+  addProcess,
+  getMotorcycleByInvoice,
+} from "../services/database.service.js";
 
 const router: ExpressRouter = Router();
 
 router.post("/", async (req, res) => {
-  console.log("Datos recibidos para registrar motocicleta:", req.body);
-  
   try {
     const {
       CUIdCustomer,
@@ -28,12 +31,10 @@ router.post("/", async (req, res) => {
 
     if (!client || client.length === 0) {
       return res.status(404).json({
-        message: "Cliente no encontrado. No se puede registrar la motocicleta.",
+        message: "Client not found. Please register the client before adding a motorcycle.",
       });
     }
     
-    console.log('Cliente encontrado:', client);
-
     const result = await addMotorcycle(
       client[0].CUIdCustomer,
       MOPlate,
@@ -51,35 +52,58 @@ router.post("/", async (req, res) => {
 
     try{
       
-      const datos: DatosDeclaraguate = {
+      const data: DeclaraguateData = {
         tipoVehiculo: 'particular',
-        nit: `${client.CUNIT}`,
+        nit: `${client[0].CUNIT}`,
         marca: MOBrand,
         linea: MOModel,
         modelo: MOYear,
       }
-      const resultado = await ejecutarDeclaraguate(
-        datos as DatosDeclaraguate
+      const resultado = await executeDeclaraguate(
+        data as DeclaraguateData
       );
 
-      console.log("Resultado de ejecutarDeclaraguate:", resultado);
-
-      const observations = `Declaraguate ejecutado con éxito. Mensaje: ${resultado.mensaje}`;
+      const observations = `Declaraguate executed successfully. Message: ${resultado.message}`;
 
       const processResult = await addProcess(result.insertId, observations);
     }catch (error: unknown) {
+
       console.error("Error al ejecutar Declaraguate:", error);
     }
 
     res.status(201).json({
-      message: "Motocicleta registrada correctamente",
+      message: "Motorcycle registered successfully",
       id: result.insertId,
     });
   } catch (error: unknown) {
-    console.error("Error al registrar motocicleta:", error);
-
     res.status(500).json({
-      message: "Error al registrar la motocicleta",
+      message: "Error registering the motorcycle",
+    });
+  }
+});
+
+router.get("/", async (req, res) => {
+  const { serieInvoice, numberInvoice } = req.query;
+
+  if (typeof serieInvoice !== "string" || typeof numberInvoice !== "string") {
+    return res.status(400).json({
+      message: "serieInvoice and numberInvoice are required",
+    });
+  }
+
+  try {
+    const motorcycles = await getMotorcycleByInvoice(serieInvoice, numberInvoice);
+
+    if (motorcycles.length === 0) {
+      return res.status(404).json({
+        message: "Motorcycle not found",
+      });
+    }
+
+    return res.json(motorcycles[0]);
+  } catch (error: unknown) {
+    return res.status(500).json({
+      message: "Error retrieving the motorcycle",
     });
   }
 });

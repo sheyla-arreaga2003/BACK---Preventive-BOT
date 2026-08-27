@@ -2,23 +2,21 @@ import { chromium, request } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { RespuestaCapSolver } from "../interfaces/declaraguate.interface.js";
-import type { DatosDeclaraguate } from "../interfaces/capsolver.interface.js";
+import type { DeclaraguateData } from "../interfaces/capsolver.interface.js";
 
-const directorioCapturas = resolve(process.cwd(), 'capturas');
+const snapshotDirectory = resolve(process.cwd(), 'capturas');
 
-async function resolverCaptcha(imagenBase64: string): Promise<string> {
+async function resolveCaptcha(imagenBase64: string): Promise<string> {
   const clientKey = 'CAP-9C76A0B9513C17BDC42C7AE1E403561CA12DE60FAA6F279F900ECCB9A6C722F9';
-
-  console.log('Resolviendo CAPTCHA con CapSolver...');
 
   if (!clientKey) {
     throw new Error('CAPSOLVER_API_KEY no está configurada');
   }
 
-  const contexto = await request.newContext();
+  const context = await request.newContext();
 
   try {
-    const response = await contexto.post(
+    const response = await context.post(
       'https://api.capsolver.com/createTask',
       {
         timeout: 60_000,
@@ -36,31 +34,31 @@ async function resolverCaptcha(imagenBase64: string): Promise<string> {
     );
 
     if (!response.ok()) {
-      throw new Error(`CapSolver respondió HTTP ${response.status()}`);
+      throw new Error(`CapSolver response HTTP ${response.status()}`);
     }
 
-    const resultado = (await response.json()) as RespuestaCapSolver;
-    const texto = resultado.solution?.text?.trim();
+    const result = (await response.json()) as RespuestaCapSolver;
+    const text = result.solution?.text?.trim();
 
-    if (resultado.errorId !== 0 || resultado.status !== 'ready' || !texto) {
+    if (result.errorId !== 0 || result.status !== 'ready' || !text) {
       throw new Error(
-        resultado.errorDescription ??
-          'CapSolver no pudo resolver el CAPTCHA'
+        result.errorDescription ??
+          'CapSolver captcha solving failed with unknown error'
       );
     }
 
-    return texto;
+    return text;
   } finally {
-    await contexto.dispose();
+    await context.dispose();
   }
 }
 
-async function esperar(milisegundos: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, milisegundos));
+async function waiting(miliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, miliseconds));
 }
 
-async function ejecutarIntento(datos: DatosDeclaraguate, numeroIntento: number) {
-  await mkdir(directorioCapturas, { recursive: true });
+async function executeTry(data: DeclaraguateData, tryNumber: number) {
+  await mkdir(snapshotDirectory, { recursive: true });
 
   const browser = await chromium.launch({
     headless: true
@@ -84,12 +82,12 @@ async function ejecutarIntento(datos: DatosDeclaraguate, numeroIntento: number) 
 
     const captcha = iframe.locator('img[src*="/kaptcha.jpg"]');
     await captcha.waitFor({ state: 'visible', timeout: 30_000 });
-    await esperar(1_000 * numeroIntento);
+    await waiting(1_000 * tryNumber);
+    
+    const snapshot = await captcha.screenshot();
+    const solution = await resolveCaptcha(snapshot.toString('base64'));
 
-    const captura = await captcha.screenshot();
-    const solucion = await resolverCaptcha(captura.toString('base64'));
-
-    await iframe.getByRole('textbox').fill(solucion);
+    await iframe.getByRole('textbox').fill(solution);
 
     await iframe
       .locator('input[type="submit"][value="Llenar SAT-8620"]')
@@ -97,46 +95,44 @@ async function ejecutarIntento(datos: DatosDeclaraguate, numeroIntento: number) 
 
     const marcaTiempo = Date.now();
     const rutaCaptchaExitoso = resolve(
-      directorioCapturas,
-      `captcha-exitoso-intento-${numeroIntento}-${marcaTiempo}.png`
+      snapshotDirectory,
+      `captcha-success-try-${tryNumber}-${marcaTiempo}.png`
     );
 
-    await writeFile(rutaCaptchaExitoso, captura);
+    await writeFile(rutaCaptchaExitoso, snapshot);
 
-    const formulario = iframe.locator('form[id="mainForm"]');
+    const form = iframe.locator('form[id="mainForm"]');
 
-    await formulario.waitFor({
+    await form.waitFor({
         state: 'visible',
-        timeout: 30_000 + numeroIntento * 10_000
+        timeout: 30_000 + tryNumber * 10_000
     });
 
-    if (datos.tipoVehiculo === 'particular') {
-      await formulario
+    if (data.tipoVehiculo === 'particular') {
+      await form
         .locator('[id="mainForm:c2:_2"]')
         .check();
     }
 
-    await formulario.locator('[id="mainForm:c5"]').fill(datos.nit);
-    await formulario.locator('[id="mainForm:c24"]').fill(datos.marca);
-    await formulario.locator('[id="mainForm:c25"]').fill(datos.linea);
-    await formulario.locator('[id="mainForm:c26"]').fill(datos.modelo);
+    await form.locator('[id="mainForm:c5"]').fill(data.nit);
+    await form.locator('[id="mainForm:c24"]').fill(data.marca);
+    await form.locator('[id="mainForm:c25"]').fill(data.linea);
+    await form.locator('[id="mainForm:c26"]').fill(data.modelo);
 
     return {
-      exitoso: true,
-      mensaje: 'Formulario llenado correctamente'
+      result: true,
+      message: 'Formulario llenado correctamente'
     };
   } catch (error) {
-    const rutaError = resolve(
-      directorioCapturas,
-      `error-intento-${numeroIntento}-${Date.now()}.png`
+    const errorRute = resolve(
+      snapshotDirectory,
+      `error-try-${tryNumber}-${Date.now()}.png`
     );
 
     await page.screenshot({
-      path: rutaError,
+      path: errorRute,
       fullPage: true
     });
-    console.error(`Captura del error guardada en: ${rutaError}`);
-    console.error('Error del intento:', error);
 
     throw error;
   } finally {
@@ -144,24 +140,24 @@ async function ejecutarIntento(datos: DatosDeclaraguate, numeroIntento: number) 
   }
 }
 
-export async function ejecutarDeclaraguate(datos: DatosDeclaraguate) {
-  const maximoIntentos = 3;
-  let ultimoError: unknown;
+export async function executeDeclaraguate(datos: DeclaraguateData): Promise<{ result: boolean; message: string }> {
+  const maxTrys = 3;
+  let lastError: unknown;
 
-  for (let intento = 1; intento <= maximoIntentos; intento++) {
+  for (let tryCount = 1; tryCount <= maxTrys; tryCount++) {
     try {
-      console.log(`Intento ${intento} de ${maximoIntentos} para completar Declaraguate`);
-      return await ejecutarIntento(datos, intento);
+      const result = await executeTry(datos, tryCount);
+      return { result: true, message: 'Form filled successfully' };
     } catch (error: unknown) {
-      ultimoError = error;
+      lastError = error;
 
-      if (intento < maximoIntentos) {
-        await esperar(intento * 2_000);
+      if (tryCount < maxTrys) {
+        await waiting(tryCount * 2_000);
       }
     }
   }
 
-  throw ultimoError instanceof Error
-    ? ultimoError
-    : new Error('No se pudo completar Declaraguate después de varios intentos');
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Declaraguate could not be completed after several attempts');
 }

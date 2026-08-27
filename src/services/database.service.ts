@@ -72,6 +72,15 @@ export async function getMotorcycleByPlate(plate: string): Promise<any> {
   return rows;
 }
 
+export async function getMotorcycleByInvoice(
+  serieInvoice: string,
+  numberInvoice: string
+): Promise<any> {
+  const query = `SELECT * FROM MOTORCYCLES WHERE MOSerieInvoice = ? AND MONumberInvoice = ?`;
+  const [rows] = await pool.execute(query, [serieInvoice, numberInvoice]);
+  return rows;
+}
+
 export async function updateUltimateLoginDate(userId: number): Promise<void> {
   const query = `UPDATE USER SET USFregister = NOW() WHERE USIdUser = ?`;
   await pool.execute(query, [userId]);

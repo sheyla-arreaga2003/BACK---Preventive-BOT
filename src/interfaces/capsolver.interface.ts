@@ -1,4 +1,4 @@
-export interface DatosDeclaraguate {
+export interface DeclaraguateData {
     tipoVehiculo: 'particular' | 'otro';
     nit: string;
     marca: string;
