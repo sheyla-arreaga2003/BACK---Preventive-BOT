@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import pool from "./config/database.js";
 import motorcycleRoutes from "./routes/motorcycle.routes.js";
+import authRoutes from "./routes/auth.routes.js";
 
 const app = express();
 const PORT = 3000;
@@ -16,6 +17,7 @@ app.use(cors({
 app.use(express.json());
 
 app.use("/api/motorcycles", motorcycleRoutes);
+app.use("/api/auth", authRoutes);
 
 app.get("/", (_req, res) => {
   res.json({
