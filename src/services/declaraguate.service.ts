@@ -161,3 +161,248 @@ export async function executeDeclaraguate(datos: DeclaraguateData): Promise<{ re
     ? lastError
     : new Error('Declaraguate could not be completed after several attempts');
 }
+
+export async function executeVerificator(
+  nit: string,
+  tryNumber: number
+): Promise<{ result: boolean; message: string }> {
+  await mkdir(snapshotDirectory, { recursive: true });
+
+  let browser;
+
+  try {
+    browser = await chromium.launch({
+      headless: true
+    });
+
+    const page = await browser.newPage();
+
+    await page.goto(
+      'https://portal.sat.gob.gt/portal/verificador-integrado/',
+      {
+        waitUntil: 'domcontentloaded',
+        timeout: 45_000
+      }
+    );
+
+    const iframe = page.frameLocator('iframe[title="Consulta"]');
+
+    await iframe
+      .locator('body')
+      .waitFor({
+        state: 'visible',
+        timeout: 30_000
+      });
+
+    const form = iframe.locator('[id="formContent"]');
+
+    await form.waitFor({
+      state: 'visible',
+      timeout: 30_000
+    });
+
+    const captcha = iframe.locator(
+      '[id="formContent:j_idt26"]'
+    );
+
+    const captchaInput = iframe.locator(
+      '[id="formContent:j_idt28"]'
+    );
+
+    const captchaButton = iframe.locator(
+      '[id="formContent:j_idt30"]'
+    );
+
+    const maxCaptchaAttempts = 5;
+
+    let captchaValidado = false;
+
+    for (
+      let captchaAttempt = 1;
+      captchaAttempt <= maxCaptchaAttempts;
+      captchaAttempt++
+    ) {
+      console.log(
+        `Intento CAPTCHA ${captchaAttempt}/${maxCaptchaAttempts}`
+      );
+
+      await captcha.waitFor({
+        state: 'visible',
+        timeout: 30_000
+      });
+
+      await waiting(1000 * tryNumber);
+
+      const snapshot = await captcha.screenshot();
+
+      const solution = await resolveCaptcha(
+        snapshot.toString('base64')
+      );
+
+      console.log('Captcha solution:', solution);
+
+      await captchaInput.fill(solution);
+
+      await captchaButton.click();
+
+      await waiting(1500);
+
+      const captchaSigueVisible = await captcha
+        .isVisible()
+        .catch(() => false);
+
+      if (!captchaSigueVisible) {
+        console.log('CAPTCHA validado correctamente');
+        captchaValidado = true;
+        break;
+      }
+
+      console.log(
+        'CAPTCHA incorrecto. La imagen sigue visible, se reintentará.'
+      );
+
+      await captchaInput.fill('');
+
+      await waiting(1000);
+    }
+
+    if (!captchaValidado) {
+      return {
+        result: false,
+        message: `No fue posible resolver el CAPTCHA después de ${maxCaptchaAttempts} intentos`
+      };
+    }
+
+    const selectorTipoConsulta = iframe.locator(
+      '[id="formContent:selTipoConsulta_label"]'
+    );
+
+    await selectorTipoConsulta.waitFor({
+      state: 'visible',
+      timeout: 30_000
+    });
+
+    const titulo = await selectorTipoConsulta.textContent();
+
+    console.log('Titulo:', titulo);
+
+    const dropdown = iframe.locator(
+      '[id="formContent:selTipoConsulta_input"]'
+    );
+
+    await dropdown.evaluate((element: HTMLElement) => {
+      const win = element.ownerDocument.defaultView as any;
+
+      const widget = win.PrimeFaces.getWidgetById(
+        'formContent:selTipoConsulta'
+      );
+
+      widget.selectValue('2');
+    });
+
+    const titulo3 = await iframe
+      .locator('[id="formContent:selTipoConsulta_label"]')
+      .textContent();
+
+    console.log('Titulo3:', titulo3);
+
+    const nitInput = iframe.locator(
+      '[id="formContent:pNitEmi"]:visible'
+    );
+
+    await nitInput.waitFor({
+      state: 'visible',
+      timeout: 30_000
+    });
+
+    console.log(
+      'NIT visible:',
+      await nitInput.isVisible()
+    );
+
+    await nitInput.click();
+
+    await nitInput.pressSequentially(nit, {
+      delay: 50
+    });
+
+    console.log(
+      'NIT ingresado:',
+      await nitInput.inputValue()
+    );
+
+    await iframe
+      .locator('[id="formContent:btnBuscar"]')
+      .click();
+
+    const pnlData = iframe.locator(
+      '[id="formContent:pnlData"]'
+    );
+
+    await pnlData.waitFor({
+      state: 'visible',
+      timeout: 30_000
+    });
+
+    const iframeResultado = pnlData.locator(
+      'iframe#Iframe'
+    );
+
+    await iframeResultado.waitFor({
+      state: 'visible',
+      timeout: 30_000
+    });
+
+    console.log(
+      'Iframe HTML:',
+      await iframeResultado.evaluate(
+        el => el.outerHTML
+      )
+    );
+
+    console.log(
+      'iframe src:',
+      await iframeResultado.getAttribute('src')
+    );
+
+    const frameResultado =
+      iframeResultado.contentFrame();
+
+    const labelResultado = frameResultado.locator(
+      '[id="formContent:j_idt19"]'
+    );
+
+    await labelResultado.waitFor({
+      state: 'visible',
+      timeout: 30_000
+    });
+
+    const resultado = (
+      await labelResultado.innerText()
+    ).trim();
+
+    console.log(
+      'Resultado SAT:',
+      resultado
+    );
+
+    return {
+      result: true,
+      message: resultado
+    };
+  } catch (error) {
+    console.error(
+      'Error executing verificator:',
+      error
+    );
+
+    return {
+      result: false,
+      message: 'Verificator execution failed'
+    };
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+}

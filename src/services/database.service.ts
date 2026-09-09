@@ -54,9 +54,9 @@ export async function getClientByNit(nit: string): Promise<any> {
   return rows;
 }
 
-export async function addProcess(idMotorcycle: number, observations: string): Promise<ResultSetHeader> {
+export async function addProcess(idMotorcycle: number, idState: number, observations: string): Promise<ResultSetHeader> {
   const query = `INSERT INTO PROCESSING (MOIdMoto, STIdState, PRObservations, PRFirstDate, PRDateUpdate) VALUES (?, ?, ?, CURDATE(), CURDATE())`;
-  const [result] = await pool.execute<ResultSetHeader>(query, [idMotorcycle, 1, observations]);
+  const [result] = await pool.execute<ResultSetHeader>(query, [idMotorcycle, idState, observations]);
   return result;
 }
 

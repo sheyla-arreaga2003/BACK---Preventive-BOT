@@ -1,5 +1,5 @@
 import { Router, type Router as ExpressRouter } from "express";
-import { executeDeclaraguate } from "../services/declaraguate.service.js";
+import { executeDeclaraguate, executeVerificator } from "../services/declaraguate.service.js";
 import type { DeclaraguateData } from "../interfaces/capsolver.interface.js";
 import {
   addMotorcycle,
@@ -49,9 +49,9 @@ router.post("/", async (req, res) => {
       MOSerieInvoice,
       MONumberInvoice
     );
-
+    
+    
     try{
-      
       const data: DeclaraguateData = {
         tipoVehiculo: 'particular',
         nit: `${client[0].CUNIT}`,
@@ -59,13 +59,21 @@ router.post("/", async (req, res) => {
         linea: MOModel,
         modelo: MOYear,
       }
-      const resultado = await executeDeclaraguate(
+      const resultVerificator = await executeVerificator(
+        client[0].CUNIT,
+        3
+      );
+
+      const processResultVerificador = await addProcess(result.insertId, 1, resultVerificator.message);
+
+      const resultDeclaraguate = await executeDeclaraguate(
         data as DeclaraguateData
       );
 
-      const observations = `Declaraguate executed successfully. Message: ${resultado.message}`;
+      const processResult = await addProcess(result.insertId, 2, resultDeclaraguate.message);
 
-      const processResult = await addProcess(result.insertId, observations);
+      const observations = `Declaraguate executed successfully. Message: ${resultDeclaraguate.message}`;
+
     }catch (error: unknown) {
 
       console.error("Error al ejecutar Declaraguate:", error);
@@ -77,7 +85,7 @@ router.post("/", async (req, res) => {
     });
   } catch (error: unknown) {
     res.status(500).json({
-      message: "Error registering the motorcycle",
+      message: "Error registering the motorcycle " + error,
     });
   }
 });
@@ -103,7 +111,7 @@ router.get("/", async (req, res) => {
     return res.json(motorcycles[0]);
   } catch (error: unknown) {
     return res.status(500).json({
-      message: "Error retrieving the motorcycle",
+      message: "Error retrieving the motorcycle " + error,
     });
   }
 });
