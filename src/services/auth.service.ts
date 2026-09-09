@@ -11,6 +11,7 @@ interface LoginSuccess {
   success: true;
   sessionid: string;
   token: string;
+  USName: string;
 }
 
 interface TokenSuccess {
@@ -54,7 +55,7 @@ export const validateLogin = async (email: string, password: string): Promise<Lo
       { expiresIn: expires },
     );
 
-    return { success: true, sessionid, token };
+    return { success: true, sessionid, token, USName: user.USName };
   } catch {
     return { success: false };
   }
