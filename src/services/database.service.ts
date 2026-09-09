@@ -64,9 +64,39 @@ export async function getClientByNit(nit: string): Promise<any> {
   return rows;
 }
 
-export async function addProcess(idMotorcycle: number, observations: string): Promise<ResultSetHeader> {
+export async function getClients(page: number = 1,pageSize: number = 20): Promise<any> {
+  const offset = (page - 1) * pageSize;
+
+  const query = `SELECT * FROM CUSTOMER ORDER BY id LIMIT ? OFFSET ?`;
+
+  const countQuery = `
+    SELECT COUNT(*) AS total
+    FROM CUSTOMER
+  `;
+
+  const [rows] = await pool.execute(query, [
+    pageSize,
+    offset
+  ]);
+
+  const [countRows]: any = await pool.execute(countQuery);
+
+  const total = countRows[0].total;
+
+  return {
+    data: rows,
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize)
+    }
+  };
+}
+
+export async function addProcess(idMotorcycle: number, idState: number, observations: string): Promise<ResultSetHeader> {
   const query = `INSERT INTO PROCESSING (MOIdMoto, STIdState, PRObservations, PRFirstDate, PRDateUpdate) VALUES (?, ?, ?, CURDATE(), CURDATE())`;
-  const [result] = await pool.execute<ResultSetHeader>(query, [idMotorcycle, 1, observations]);
+  const [result] = await pool.execute<ResultSetHeader>(query, [idMotorcycle, idState, observations]);
   return result;
 }
 
@@ -80,6 +110,30 @@ export async function getMotorcycleByPlate(plate: string): Promise<any> {
   const query = `SELECT * FROM MOTORCYCLES WHERE MOPlate = ?`;
   const [rows] = await pool.execute(query, [plate]);
   return rows;
+}
+
+export async function getMotorcyclePendingPlates(page: number = 1, pageSize: number = 20): Promise<any> {
+  const offset = (page - 1) * pageSize;
+  
+  const countQuery = `SELECT COUNT(*) AS total FROM MOTORCYCLES WHERE MOPlate IS NULL`;
+  
+  const [countRows]: any = await pool.execute(countQuery);
+
+  const total = countRows[0].total;
+  
+  const query = `SELECT * FROM MOTORCYCLES WHERE MOPlate IS NULL ORDER BY id LIMIT ? OFFSET ?`;
+  
+  const [rows] = await pool.execute(query, [pageSize, offset]);
+
+  return {
+    data: rows,
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize)
+    }
+  };
 }
 
 export async function getMotorcycleByInvoice(
