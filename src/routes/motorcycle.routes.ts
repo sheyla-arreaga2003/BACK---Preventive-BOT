@@ -6,9 +6,39 @@ import {
   getClientByNit,
   addProcess,
   getMotorcycleByInvoice,
+  getMotorcyclePendingPlates,
 } from "../services/database.service.js";
 
 const router: ExpressRouter = Router();
+
+router.get("/pendingPlates", async (req, res) => {
+  const { page, pageSize } = req.query;
+
+  if (page && isNaN(Number(page))) {
+    return res.status(400).json({
+      message: "page must be a number",
+    });
+  }
+
+  if (pageSize && isNaN(Number(pageSize))) {
+    return res.status(400).json({
+      message: "pageSize must be a number",
+    });
+  }
+
+  try {
+    const motorcycles = await getMotorcyclePendingPlates(
+      Number(page) || 1,
+      Number(pageSize) || 20
+    );
+
+    res.json(motorcycles);
+  } catch (error: unknown) {
+    res.status(500).json({
+      message: "Error retrieving pending plates " + error,
+    });
+  }
+});
 
 router.post("/", async (req, res) => {
   try {
@@ -66,6 +96,15 @@ router.post("/", async (req, res) => {
 
       const processResultVerificador = await addProcess(result.insertId, 1, resultVerificator.message);
 
+      if (!resultVerificator.message.includes("Sí")) {
+        res.status(201).json({
+          message: "Motorcycle registered successfully",
+          id: result.insertId,
+          idProcess: processResultVerificador.insertId,
+          observations: resultVerificator.message,
+        });
+      }
+      
       const resultDeclaraguate = await executeDeclaraguate(
         data as DeclaraguateData
       );
@@ -74,15 +113,16 @@ router.post("/", async (req, res) => {
 
       const observations = `Declaraguate executed successfully. Message: ${resultDeclaraguate.message}`;
 
+      res.status(201).json({
+        message: "Motorcycle registered successfully",
+        id: result.insertId,
+        idProcess: processResult.insertId,
+        observations: observations,
+      });
     }catch (error: unknown) {
 
       console.error("Error al ejecutar Declaraguate:", error);
     }
-
-    res.status(201).json({
-      message: "Motorcycle registered successfully",
-      id: result.insertId,
-    });
   } catch (error: unknown) {
     res.status(500).json({
       message: "Error registering the motorcycle " + error,
