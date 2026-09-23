@@ -67,14 +67,14 @@ export async function getClientByNit(nit: string): Promise<any> {
 export async function getClients(page: number = 1,pageSize: number = 20): Promise<any> {
   const offset = (page - 1) * pageSize;
 
-  const query = `SELECT * FROM CUSTOMER ORDER BY id LIMIT ? OFFSET ?`;
+  const query = `SELECT * FROM CUSTOMER ORDER BY CUIdCustomer LIMIT ? OFFSET ?`;
 
   const countQuery = `
     SELECT COUNT(*) AS total
     FROM CUSTOMER
   `;
 
-  const [rows] = await pool.execute(query, [
+  const [rows] = await pool.query(query, [
     pageSize,
     offset
   ]);
@@ -126,9 +126,9 @@ export async function getMotorcyclePendingPlates(page: number = 1, pageSize: num
 
   const total = countRows[0].total;
   
-  const query = `SELECT * FROM MOTORCYCLES WHERE MOPlate IS NULL ORDER BY id LIMIT ? OFFSET ?`;
+  const query = `SELECT * FROM MOTORCYCLES WHERE MOPlate IS NULL ORDER BY MOIdMoto LIMIT ? OFFSET ?`;
   
-  const [rows] = await pool.execute(query, [pageSize, offset]);
+  const [rows] = await pool.query(query, [pageSize, offset]);
 
   return {
     data: rows,
