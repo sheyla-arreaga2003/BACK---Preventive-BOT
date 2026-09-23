@@ -50,7 +50,7 @@ export async function addMotorcycle (
     
 export async function getClientByNit(nit: string): Promise<any> {
   const query = `SELECT * FROM CUSTOMER WHERE CUNIT = ?`;
-  const [rows] = await pool.execute(query, [nit]);
+  const [rows] = await pool.execute(query, [nit]);  
   return rows;
 }
 
@@ -96,8 +96,13 @@ export async function getUserByUsername(username: string): Promise<any> {
   return rows;
 }
 
+export async function getMotorcyclesByCustomerId(customerId: number): Promise<any> {
+  const query = `SELECT * FROM MOTORCYCLES WHERE CUIdCustomer = ?`;
+  const [rows] = await pool.execute(query, [customerId]);
+  return rows;
+}
 export async function getMotorcycleByPlate(plate: string): Promise<any> {
-  const query = `SELECT * FROM MOTORCYCLES WHERE MOPlate = ?`;
+  const query = `SELECT MO.*, CU.CUName, CU.CULastName FROM MOTORCYCLES MO INNER JOIN CUSTOMER CU ON MOTORCYCLES.CUIdCustomer = CUSTOMER.CUIdCustomer WHERE MOPlate = ?`;
   const [rows] = await pool.execute(query, [plate]);
   return rows;
 }
@@ -144,4 +149,15 @@ export async function addUser(name: string, rol: string, lastname: string, email
   const query = `INSERT INTO USER (USName, USRol, USLastname, USEmail, USPhone, USPassword) VALUES (?, ?, ?, ?, ?, ?)`;
   const [result] = await pool.execute<ResultSetHeader>(query, [name, rol, lastname, email, phone, password]);
   return result;
+}
+
+export async function addClient(CUName: string, CULastName: string, CUDPI: string, CUPhone: string, CUMail: string, CUAddress: string, CUState: string, CUNIT: string): Promise<ResultSetHeader> {
+  const query = `INSERT INTO CUSTOMER (CUName, CULastname, CUDPI, CUPhone, CUmail, CUAddress, CUState, CUNIT) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+  const [result] = await pool.execute<ResultSetHeader>(query, [CUName, CULastName, CUDPI, CUPhone, CUMail, CUAddress, CUState, CUNIT]);
+  return result;
+}
+
+export async function patchClient(nit: string, CUName: string, CULastName: string, CUPhone: string, CUMail: string, CUAddress: string, CUState: string): Promise<void> {
+  const query = `UPDATE CUSTOMER SET CUName = ?, CULastName = ?, CUPhone = ?, CUMail = ?, CUAddress = ?, CUState = ? WHERE CUNIT = ?`;
+  await pool.execute(query, [CUName, CULastName, CUPhone, CUMail, CUAddress, CUState, nit]);
 }
