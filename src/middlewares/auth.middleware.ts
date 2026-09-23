@@ -38,7 +38,7 @@ export const authMiddleware = async (req: AuthenticatedRequest, res: Response, n
             process.env.JWT_SECRET || 'default_secret',
         );
 
-        if (typeof decoded === "string" || typeof decoded.sid !== "string") {
+        if (typeof decoded === "string" || typeof decoded.sid !== "string" || decoded.sub === undefined) {
             return res.status(401).json({ message: "Unauthorized" });
         }
 
@@ -51,6 +51,10 @@ export const authMiddleware = async (req: AuthenticatedRequest, res: Response, n
         const sessionData: unknown = JSON.parse(session);
 
         if (!isSessionData(sessionData)) {
+            return res.status(401).json({ message: "Unauthorized" });
+        }
+
+        if (Number(decoded.sub) !== sessionData.userId) {
             return res.status(401).json({ message: "Unauthorized" });
         }
 

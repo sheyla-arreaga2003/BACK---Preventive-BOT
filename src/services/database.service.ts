@@ -112,7 +112,7 @@ export async function getMotorcyclesByCustomerId(customerId: number): Promise<an
   return rows;
 }
 export async function getMotorcycleByPlate(plate: string): Promise<any> {
-  const query = `SELECT MO.*, CU.CUName, CU.CULastName FROM MOTORCYCLES MO INNER JOIN CUSTOMER CU ON MOTORCYCLES.CUIdCustomer = CUSTOMER.CUIdCustomer WHERE MOPlate = ?`;
+  const query = `SELECT MO.*, CU.CUName, CU.CULastName FROM MOTORCYCLES MO INNER JOIN CUSTOMER CU ON MO.CUIdCustomer = CU.CUIdCustomer WHERE MO.MOPlate = ?`;
   const [rows] = await pool.execute(query, [plate]);
   return rows;
 }
@@ -162,14 +162,13 @@ export async function addUser(name: string, roleId: number, lastname: string, em
 }
 
 
-export async function addClient(CUName: string, CULastName: string, CUDPI: string, CUPhone: string, CUMail: string, CUAddress: string, CUState: string, CUNIT: string): Promise<ResultSetHeader> {
+export async function addClient(CUName: string, CULastName: string, CUDPI: string, CUPhone: string, CUMail: string, CUAddress: string, CUState: number, CUNIT: string): Promise<ResultSetHeader> {
   const query = `INSERT INTO CUSTOMER (CUName, CULastname, CUDPI, CUPhone, CUmail, CUAddress, CUState, CUNIT) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
   const [result] = await pool.execute<ResultSetHeader>(query, [CUName, CULastName, CUDPI, CUPhone, CUMail, CUAddress, CUState, CUNIT]);
   return result;
 }
 
-export async function patchClient(nit: string, CUName: string, CULastName: string, CUPhone: string, CUMail: string, CUAddress: string, CUState: string): Promise<void> {
+export async function patchClient(nit: string, CUName: string, CULastName: string, CUPhone: string, CUMail: string, CUAddress: string, CUState: number): Promise<void> {
   const query = `UPDATE CUSTOMER SET CUName = ?, CULastName = ?, CUPhone = ?, CUMail = ?, CUAddress = ?, CUState = ? WHERE CUNIT = ?`;
   await pool.execute(query, [CUName, CULastName, CUPhone, CUMail, CUAddress, CUState, nit]);
 }
-

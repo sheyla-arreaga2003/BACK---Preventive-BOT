@@ -1,7 +1,10 @@
 import { Router, type Router as ExpressRouter } from "express";
 import { getClientByNit, getClients, patchClient, getMotorcyclesByCustomerId, addClient } from "../services/database.service.js";
+import { authMiddleware } from "../middlewares/auth.middleware.js";
 
 const router: ExpressRouter = Router();
+
+router.use(authMiddleware);
 
 router.get("/", async (req, res) => {
     const { page, pageSize } = req.query;
@@ -48,9 +51,6 @@ router.post("/", async (req, res) => {
   const { CUNIT, CUName, CULastName, CUDPI, CUPhone, CUMail, CUAddress, CUState } = req.body;
 
   try {
-    const existingClient = await getClientByNit(CUNIT);
-
-    if (existingClient && existingClient.length > 0) return res.status(400).json({ message: "Cliente con este NIT ya existe" });
     if (!CUNIT) return res.status(400).json({ message: "El NIT es obligatorio" });
     if (!CUName) return res.status(400).json({ message: "El nombre es obligatorio" });
     if (!CULastName) return res.status(400).json({ message: "El apellido es obligatorio" });
@@ -58,9 +58,14 @@ router.post("/", async (req, res) => {
     if (!CUPhone) return res.status(400).json({ message: "El teléfono es obligatorio" });
     if (!CUMail) return res.status(400).json({ message: "El correo electrónico es obligatorio" });
     if (!CUAddress) return res.status(400).json({ message: "La dirección es obligatoria" });
-    if (!CUState) return res.status(400).json({ message: "El estado es obligatorio" });
+    if (CUState === undefined || CUState === null) return res.status(400).json({ message: "El estado es obligatorio" });
+    if (![0, 1].includes(Number(CUState))) return res.status(400).json({ message: "El estado debe ser 0 o 1" });
 
-    const result = await addClient(CUName, CULastName, CUDPI, CUPhone, CUMail, CUAddress, CUState, CUNIT);
+    const existingClient = await getClientByNit(CUNIT);
+
+    if (existingClient && existingClient.length > 0) return res.status(400).json({ message: "Cliente con este NIT ya existe" });
+
+    const result = await addClient(CUName, CULastName, CUDPI, CUPhone, CUMail, CUAddress, Number(CUState), CUNIT);
 
     res.status(201).json({ message: "Cliente agregado correctamente", CUIdCustomer: result.insertId });
   } catch (error: unknown) {
@@ -75,11 +80,19 @@ router.patch("/:nit", async (req, res) => {
     const { CUName, CULastName, CUPhone, CUMail, CUAddress, CUState } = req.body;
 
     try {
+      if (!CUName) return res.status(400).json({ message: "El nombre es obligatorio" });
+      if (!CULastName) return res.status(400).json({ message: "El apellido es obligatorio" });
+      if (!CUPhone) return res.status(400).json({ message: "El teléfono es obligatorio" });
+      if (!CUMail) return res.status(400).json({ message: "El correo electrónico es obligatorio" });
+      if (!CUAddress) return res.status(400).json({ message: "La dirección es obligatoria" });
+      if (CUState === undefined || CUState === null) return res.status(400).json({ message: "El estado es obligatorio" });
+      if (![0, 1].includes(Number(CUState))) return res.status(400).json({ message: "El estado debe ser 0 o 1" });
+
       const cliente = await getClientByNit(nit);
 
       if (cliente && cliente.length > 0) {
         
-        await patchClient(nit, CUName, CULastName, CUPhone, CUMail, CUAddress, CUState);
+        await patchClient(nit, CUName, CULastName, CUPhone, CUMail, CUAddress, Number(CUState));
 
         res.json({ message: "Cliente actualizado correctamente" });
       } else {
