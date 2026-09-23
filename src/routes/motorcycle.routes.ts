@@ -6,23 +6,37 @@ import {
   getClientByNit,
   addProcess,
   getMotorcycleByInvoice,
+  getMotorcycleByPlate,
   getMotorcyclePendingPlates,
 } from "../services/database.service.js";
 
 const router: ExpressRouter = Router();
+
+router.get("/plate/:plate", async (req, res) => {
+  const { plate } = req.params;
+
+  try {
+    const motorcycle = await getMotorcycleByPlate(plate);
+    res.json(motorcycle);
+  } catch (error: unknown) {
+    res.status(500).json({
+      message: "Error retrieving the motorcycle " + error,
+    });
+  }
+});
 
 router.get("/pendingPlates", async (req, res) => {
   const { page, pageSize } = req.query;
 
   if (page && isNaN(Number(page))) {
     return res.status(400).json({
-      message: "page must be a number",
+      message: "Error en page: debe ser un número",
     });
   }
 
   if (pageSize && isNaN(Number(pageSize))) {
     return res.status(400).json({
-      message: "pageSize must be a number",
+      message: "Error en pageSize: debe ser un número",
     });
   }
 
@@ -35,7 +49,7 @@ router.get("/pendingPlates", async (req, res) => {
     res.json(motorcycles);
   } catch (error: unknown) {
     res.status(500).json({
-      message: "Error retrieving pending plates " + error,
+      message: "Error obteniendo las placas pendientes: " + error,
     });
   }
 });
@@ -61,7 +75,7 @@ router.post("/", async (req, res) => {
 
     if (!client || client.length === 0) {
       return res.status(404).json({
-        message: "Client not found. Please register the client before adding a motorcycle.",
+        message: "Cliente no encontrado. Por favor registre el cliente antes de agregar una motocicleta.",
       });
     }
     
@@ -98,7 +112,7 @@ router.post("/", async (req, res) => {
 
       if (!resultVerificator.message.includes("Sí")) {
         res.status(201).json({
-          message: "Motorcycle registered successfully",
+          message: "Motocicleta registrada correctamente",
           id: result.insertId,
           idProcess: processResultVerificador.insertId,
           observations: resultVerificator.message,
@@ -114,7 +128,7 @@ router.post("/", async (req, res) => {
       const observations = `Declaraguate executed successfully. Message: ${resultDeclaraguate.message}`;
 
       res.status(201).json({
-        message: "Motorcycle registered successfully",
+        message: "Motocicleta registrada correctamente",
         id: result.insertId,
         idProcess: processResult.insertId,
         observations: observations,
@@ -125,7 +139,7 @@ router.post("/", async (req, res) => {
     }
   } catch (error: unknown) {
     res.status(500).json({
-      message: "Error registering the motorcycle " + error,
+      message: "Error registrando la motocicleta: " + error,
     });
   }
 });
@@ -144,14 +158,14 @@ router.get("/", async (req, res) => {
 
     if (motorcycles.length === 0) {
       return res.status(404).json({
-        message: "Motorcycle not found",
+        message: "Motocicleta no encontrada",
       });
     }
 
     return res.json(motorcycles[0]);
   } catch (error: unknown) {
     return res.status(500).json({
-      message: "Error retrieving the motorcycle " + error,
+      message: "Error obteniendo la motocicleta: " + error,
     });
   }
 });
