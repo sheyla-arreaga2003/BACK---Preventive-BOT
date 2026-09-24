@@ -20,10 +20,13 @@
   "type": "module",
   "dependencies": {
     "@playwright/test": "^1.62.1",
+    "@types/jsonwebtoken": "^9.0.10",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "mysql2": "^3.23.3"
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.23.3",
+    "redis": "^6.2.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
