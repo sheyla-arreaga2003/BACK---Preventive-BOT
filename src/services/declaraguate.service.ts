@@ -1,4 +1,4 @@
-import { chromium, request } from "@playwright/test";
+import { chromium, expect, request } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { RespuestaCapSolver } from "../interfaces/declaraguate.interface.js";
@@ -335,6 +335,10 @@ export async function executeVerificator(
       .locator('[id="formContent:btnBuscar"]')
       .click();
 
+    const mensajeError = form.locator(
+      '[id="formContent:msg"] .ui-messages-error-summary'
+    );
+
     const pnlData = iframe.locator(
       '[id="formContent:pnlData"]'
     );
@@ -347,6 +351,32 @@ export async function executeVerificator(
     const iframeResultado = pnlData.locator(
       'iframe#Iframe'
     );
+
+    await expect
+    .poll(
+      async () =>
+        (await mensajeError.isVisible()) ||
+        (await iframeResultado.isVisible()),
+      {
+        message:
+          'Debe mostrarse un mensaje de error o el iframe del resultado',
+        timeout: 30_000
+      }
+    )
+    .toBe(true);
+
+    if (await mensajeError.isVisible()) {
+      await expect(
+        mensajeError,
+        'Debe indicar que el NIT es inválido'
+      ).toHaveText('NIT inválido');
+      console.log('Respuesta del formulario:', await mensajeError.textContent());
+      return {
+        result: false,
+        message: 'NIT inválido'
+      };
+    }
+
 
     await iframeResultado.waitFor({
       state: 'visible',
