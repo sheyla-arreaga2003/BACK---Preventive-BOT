@@ -111,7 +111,7 @@ router.post("/", async (req, res) => {
       const processResultVerificador = await addProcess(result.insertId, 1, resultVerificator.message);
 
       if (!resultVerificator.message.includes("Sí")) {
-        res.status(201).json({
+        return res.status(201).json({
           message: "Motocicleta registrada correctamente",
           id: result.insertId,
           idProcess: processResultVerificador.insertId,
@@ -127,15 +127,19 @@ router.post("/", async (req, res) => {
 
       const observations = `Declaraguate executed successfully. Message: ${resultDeclaraguate.message}`;
 
-      res.status(201).json({
+      return res.status(201).json({
         message: "Motocicleta registrada correctamente",
         id: result.insertId,
         idProcess: processResult.insertId,
         observations: observations,
       });
     }catch (error: unknown) {
-
-      console.error("Error al ejecutar Declaraguate:", error);
+      console.error("Error durante la verificación externa de la motocicleta:", error);
+      return res.status(201).json({
+        message: "La motocicleta fue registrada, pero la verificación externa quedó pendiente",
+        id: result.insertId,
+        verificationPending: true,
+      });
     }
   } catch (error: unknown) {
     res.status(500).json({
