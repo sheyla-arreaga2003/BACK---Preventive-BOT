@@ -4,3 +4,4 @@ node_modules/
 dist/
 capturas/.pnpm-store/
 .pnpm-store/
+capturas/

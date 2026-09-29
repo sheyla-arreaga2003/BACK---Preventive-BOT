@@ -108,6 +108,8 @@ router.post("/", async (req, res) => {
         3
       );
 
+      console.log("Result from Verificator:", resultVerificator);
+
       const processResultVerificador = await addProcess(result.insertId, 1, resultVerificator.message);
 
       if (!resultVerificator.message.includes("Sí")) {
