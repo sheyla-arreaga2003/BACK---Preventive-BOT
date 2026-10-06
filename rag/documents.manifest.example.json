@@ -1,0 +1,13 @@
+{
+  "documents": [
+    {
+      "documentId": "manual-aprobado",
+      "title": "Manual aprobado de ejemplo",
+      "version": "1.0",
+      "file": "documents/manual-aprobado.md",
+      "effectiveDate": null,
+      "audience": ["admin"],
+      "status": "active"
+    }
+  ]
+}

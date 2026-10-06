@@ -1,6 +1,8 @@
 node_modules/
 .env
+.env.*.local
 .DS_Store
 dist/
 capturas/.pnpm-store/
 .pnpm-store/
+var/chatbot-documents/
