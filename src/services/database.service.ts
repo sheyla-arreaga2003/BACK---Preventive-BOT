@@ -1,4 +1,5 @@
 import pool from "../config/database.js";
+import { WITHOUT_REGISTERED_PLATE_SQL } from "./motorcycle-plate-status.service.js";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 
 export interface UserRow extends RowDataPacket {
@@ -9,6 +10,129 @@ export interface UserRow extends RowDataPacket {
   USPhone: string | null;
   USPassword: string;
   ROIdRol: number | null;
+}
+
+export interface AuthenticatedUserRow extends RowDataPacket {
+  USId: number;
+  USName: string;
+  USLastName: string;
+  USEmail: string;
+  USPhone: string | null;
+  ROIdRol: number | null;
+}
+
+interface MotorcycleLatestProcessRow extends RowDataPacket {
+  MOIdMoto: number;
+  MOBrand: string;
+  MOModel: string;
+  MOYear: string | number;
+  MOColor: string;
+  MOPlate: string | null;
+  STIdState: number | null;
+  STState: string | null;
+  PRFirstDate: string | null;
+}
+
+export interface MotorcycleInvoiceProcessData {
+  brand: string;
+  model: string;
+  year: string | number;
+  color: string;
+  plate: string | null;
+  latestState: {
+    id: number;
+    name: string;
+    registeredDate: string;
+  } | null;
+}
+
+export type MotorcycleInvoiceProcessResult =
+  | { status: "found"; data: MotorcycleInvoiceProcessData }
+  | { status: "not_found" }
+  | { status: "ambiguous" };
+
+type MotorcycleInvoiceProcessQuery = (
+  query: string,
+  parameters: readonly [string, string],
+) => Promise<MotorcycleLatestProcessRow[]>;
+
+const motorcycleWithLatestProcessQuery = `
+  SELECT
+    MO.MOIdMoto,
+    MO.MOBrand,
+    MO.MOModel,
+    MO.MOYear,
+    MO.MOColor,
+    MO.MOPlate,
+    LP.STIdState,
+    SP.STState,
+    LP.PRFirstDate
+  FROM MOTORCYCLES MO
+  LEFT JOIN PROCESSING LP
+    ON LP.PRIdProcess = (
+      SELECT MAX(P.PRIdProcess)
+      FROM PROCESSING P
+      WHERE P.MOIdMoto = MO.MOIdMoto
+    )
+  LEFT JOIN STATE_PLATE SP
+    ON SP.STIdState = LP.STIdState
+  WHERE MO.MOSerieInvoice = ?
+    AND MO.MONumberInvoice = ?
+`;
+
+const executeMotorcycleInvoiceProcessQuery: MotorcycleInvoiceProcessQuery = async (query, parameters) => {
+  const [rows] = await pool.execute<MotorcycleLatestProcessRow[]>(query, [...parameters]);
+  return rows;
+};
+
+export async function getMotorcycleWithLatestProcessByInvoice(
+  serieInvoice: string,
+  numberInvoice: string,
+  executeQuery: MotorcycleInvoiceProcessQuery = executeMotorcycleInvoiceProcessQuery,
+): Promise<MotorcycleInvoiceProcessResult> {
+  if (typeof serieInvoice !== "string" || serieInvoice.trim().length === 0) {
+    throw new TypeError("serieInvoice must be a non-empty string");
+  }
+
+  if (typeof numberInvoice !== "string" || numberInvoice.trim().length === 0) {
+    throw new TypeError("numberInvoice must be a non-empty string");
+  }
+
+  const rows = await executeQuery(motorcycleWithLatestProcessQuery, [
+    serieInvoice.trim(),
+    numberInvoice.trim(),
+  ]);
+
+  if (rows.length === 0) return { status: "not_found" };
+  if (rows.length > 1) return { status: "ambiguous" };
+
+  const motorcycle = rows[0];
+  if (!motorcycle) return { status: "not_found" };
+
+  let latestState: MotorcycleInvoiceProcessData["latestState"] = null;
+  if (
+    motorcycle.STIdState !== null
+    && motorcycle.STState !== null
+    && motorcycle.PRFirstDate !== null
+  ) {
+    latestState = {
+      id: motorcycle.STIdState,
+      name: motorcycle.STState,
+      registeredDate: motorcycle.PRFirstDate,
+    };
+  }
+
+  return {
+    status: "found",
+    data: {
+      brand: motorcycle.MOBrand,
+      model: motorcycle.MOModel,
+      year: motorcycle.MOYear,
+      color: motorcycle.MOColor,
+      plate: motorcycle.MOPlate,
+      latestState,
+    },
+  };
 }
 
 export async function addMotorcycle (
@@ -106,6 +230,17 @@ export async function getUserByEmail(email: string): Promise<UserRow[]> {
   return rows;
 }
 
+export async function getAuthenticatedUserById(userId: number): Promise<AuthenticatedUserRow | null> {
+  const query = `
+    SELECT USId, USName, USLastName, USEmail, USPhone, ROIdRol
+    FROM USERS
+    WHERE USId = ?
+    LIMIT 1
+  `;
+  const [rows] = await pool.execute<AuthenticatedUserRow[]>(query, [userId]);
+  return rows[0] ?? null;
+}
+
 export async function getMotorcyclesByCustomerId(customerId: number): Promise<any> {
   const query = `SELECT * FROM MOTORCYCLES WHERE CUIdCustomer = ?`;
   const [rows] = await pool.execute(query, [customerId]);
@@ -120,13 +255,13 @@ export async function getMotorcycleByPlate(plate: string): Promise<any> {
 export async function getMotorcyclePendingPlates(page: number = 1, pageSize: number = 20): Promise<any> {
   const offset = (page - 1) * pageSize;
   
-  const countQuery = `SELECT COUNT(*) AS total FROM MOTORCYCLES WHERE MOPlate IS NULL`;
+  const countQuery = `SELECT COUNT(*) AS total FROM MOTORCYCLES WHERE ${WITHOUT_REGISTERED_PLATE_SQL}`;
   
   const [countRows]: any = await pool.execute(countQuery);
 
   const total = countRows[0].total;
   
-  const query = `SELECT * FROM MOTORCYCLES WHERE MOPlate IS NULL ORDER BY MOIdMoto LIMIT ? OFFSET ?`;
+  const query = `SELECT * FROM MOTORCYCLES WHERE ${WITHOUT_REGISTERED_PLATE_SQL} ORDER BY MOIdMoto LIMIT ? OFFSET ?`;
   
   const [rows] = await pool.query(query, [pageSize, offset]);
 

@@ -1,14 +1,19 @@
 import { createClient } from 'redis';
 import type { RedisClientType } from 'redis';
+import { env } from './env.js';
 
 export const redisClient: RedisClientType = createClient({
-  url: process.env.REDIS_URL || 'redis://localhost:6379',
+  url: env.REDIS_URL,
 });
 
 redisClient.on('error', (err) => {
   console.error('Redis Client Error', err);
 });
 
-(async () => {
-  await redisClient.connect();
-})();
+export async function connectRedis(): Promise<void> {
+  if (!redisClient.isOpen) await redisClient.connect();
+}
+
+export function redisKey(key: string): string {
+  return `${env.REDIS_KEY_PREFIX}${key}`;
+}
