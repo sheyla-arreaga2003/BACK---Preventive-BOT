@@ -1,5 +1,6 @@
-import { logout, signup, validateLogin, validateToken } from "../services/auth.service.js";
+import { logout, validateLogin } from "../services/auth.service.js";
 import { Router, type Request, type Response, type Router as ExpressRouter } from "express";
+import { authMiddleware } from "../middlewares/auth.middleware.js";
 
 const router: ExpressRouter = Router();
 
@@ -24,6 +25,9 @@ router.post("/login", async (req: Request<Record<string, never>, unknown, LoginB
         const validated = await validateLogin(email, password);
 
         if (!validated || !validated.success) {
+            if (validated?.reason === "database_unavailable" || validated?.reason === "session_store_unavailable") {
+                return res.status(503).json({ message: "Authentication service unavailable" });
+            }
             return res.status(401).json({ message: "User or password incorrect" });
         }
         
@@ -38,15 +42,9 @@ router.post("/login", async (req: Request<Record<string, never>, unknown, LoginB
     }
 });
 
-router.post("/logout", async (req: Request, res: Response) => {
+router.post("/logout", authMiddleware, async (req: Request, res: Response) => {
     try {
-        const validated = await validateToken(req.headers.authorization ?.split(" ")[1] || "");
-
-        if (!validated || !validated.success) {
-            return res.status(400).json({ message: "Invalid token" });
-        }
-
-        const closed = await logout(validated.sessionid);
+        const closed = await logout(req.auth!.session.id);
 
         if (!closed.success) {
             return res.status(500).json({ message: "Internal server error" });
@@ -58,19 +56,8 @@ router.post("/logout", async (req: Request, res: Response) => {
     }
 });
 
-router.post("/signup", async (req: Request<Record<string, never>, unknown, SignupBody>, res: Response) => {
-    try {
-        const { name, rol, lastname, email, phone, password } = req.body;
-        const created = await signup(name, rol, lastname, email, phone, password);
-
-        if (!created || !created.success) {
-            return res.status(400).json({ message: "Signup failed" });
-        }
-
-        return res.status(200).json({ message: "Signup successful" });
-    } catch (error) {
-        return res.status(500).json({ message: "Internal server error" });
-    }
+router.post("/signup", authMiddleware, async (req: Request<Record<string, never>, unknown, SignupBody>, res: Response) => {
+    return res.status(403).json({ message: "User provisioning policy is not configured" });
 });
 
 export default router;

@@ -1,70 +1,80 @@
-import jwt, { type JwtPayload } from "jsonwebtoken";
-import { redisClient } from "../config/redis.js";
-import type { NextFunction, Request, Response } from "express";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
+import { getAuthenticatedUserById, type AuthenticatedUserRow } from "../services/database.service.js";
+import { validateToken, type TokenResult } from "../services/auth.service.js";
 
-interface SessionData {
-    userId: number;
+export interface AuthIdentity {
+  user: {
+    id: number;
+    name: string;
+    lastName: string;
     email: string;
+    phone: string | null;
+  };
+  session: { id: string };
+  role: { id: number | null };
 }
 
-interface AuthenticatedRequest extends Request {
-    user?: {
-        id: number;
-        email: string;
-    };
+declare global {
+  namespace Express {
+    interface Request {
+      auth?: AuthIdentity;
+    }
+  }
 }
 
-function isSessionData(value: unknown): value is SessionData {
-    if (typeof value !== "object" || value === null) {
-        return false;
+type TokenValidator = (token: string) => Promise<TokenResult>;
+type AuthenticatedUser = Pick<AuthenticatedUserRow, "USId" | "USName" | "USLastName" | "USEmail" | "USPhone" | "ROIdRol">;
+type UserLoader = (userId: number) => Promise<AuthenticatedUser | null>;
+
+function extractBearerToken(header: string | undefined): string | null {
+  if (!header) return null;
+  const parts = header.trim().split(/\s+/);
+  return parts.length === 2 && parts[0] === "Bearer" && parts[1] ? parts[1] : null;
+}
+
+export function createAuthMiddleware(tokenValidator: TokenValidator, userLoader: UserLoader): RequestHandler {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const token = extractBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ message: "Unauthorized" });
+
+    const tokenResult = await tokenValidator(token);
+    if (!tokenResult.success) {
+      if (tokenResult.reason === "session_store_unavailable") {
+        return res.status(503).json({ message: "Authentication service unavailable" });
+      }
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const session = value as Record<string, unknown>;
-    return typeof session.userId === "number" && typeof session.email === "string";
-}
+    try {
+      const user = await userLoader(tokenResult.userId);
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
 
-export const authMiddleware = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    try{
-        const authHeader = req.headers.authorization;
-
-        const [type, token] = authHeader ? authHeader.split(" ") : [null, null];
-
-        if (!(type === "Bearer" && token)) {
-            return res.status(401).json({ message: "Unauthorized" });
-        }
-
-        const decoded: string | JwtPayload = jwt.verify(
-            token,
-            process.env.JWT_SECRET || 'default_secret',
-        );
-
-        if (typeof decoded === "string" || typeof decoded.sid !== "string" || decoded.sub === undefined) {
-            return res.status(401).json({ message: "Unauthorized" });
-        }
-
-        const session = await redisClient.get(`session:${decoded.sid}`);
-
-        if (!session) {
-            return res.status(401).json({ message: "Unauthorized" });
-        }
-
-        const sessionData: unknown = JSON.parse(session);
-
-        if (!isSessionData(sessionData)) {
-            return res.status(401).json({ message: "Unauthorized" });
-        }
-
-        if (Number(decoded.sub) !== sessionData.userId) {
-            return res.status(401).json({ message: "Unauthorized" });
-        }
-
-        req.user = {
-            id: sessionData.userId,
-            email: sessionData.email,
-        };
-
-        next();
+      req.auth = {
+        user: {
+          id: user.USId,
+          name: user.USName,
+          lastName: user.USLastName,
+          email: user.USEmail,
+          phone: user.USPhone,
+        },
+        session: { id: tokenResult.sessionid },
+        role: { id: user.ROIdRol },
+      };
+      return next();
     } catch {
-        return res.status(401).json({ message: "Unauthorized" });
+      return res.status(503).json({ message: "Authentication service unavailable" });
     }
-};
+  };
+}
+
+export const authMiddleware: RequestHandler = createAuthMiddleware(validateToken, getAuthenticatedUserById);
+
+export function authorizeRoles(...allowedRoleIds: readonly number[]): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.auth) return res.status(401).json({ message: "Unauthorized" });
+    if (req.auth.role.id === null || !allowedRoleIds.includes(req.auth.role.id)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    return next();
+  };
+}
