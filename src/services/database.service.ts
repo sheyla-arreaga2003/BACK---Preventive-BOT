@@ -307,3 +307,35 @@ export async function patchClient(nit: string, CUName: string, CULastName: strin
   const query = `UPDATE CUSTOMER SET CUName = ?, CULastName = ?, CUPhone = ?, CUMail = ?, CUAddress = ?, CUState = ? WHERE CUNIT = ?`;
   await pool.execute(query, [CUName, CULastName, CUPhone, CUMail, CUAddress, CUState, nit]);
 }
+
+export async function getAgencies(): Promise<any> {
+  const query = `SELECT * FROM AGENCIES WHERE AGActive = 1`;
+  const [rows] = await pool.execute(query);
+  return rows;
+}
+
+export async function getScheduleByAgencyId(agencyId: number, date: string): Promise<any> {
+  const query = `SELECT
+                    SC.SCIdSchedule,
+                    SC.SCTime,
+                    MA.MAMaintenance,
+                    CASE
+                        WHEN MA.MAMaintenance IS NULL THEN 1
+                        ELSE 0
+                    END AS Available
+                FROM schedules AS SC
+                LEFT JOIN maintenance AS MA
+                    ON MA.MAIdSchedule = SC.SCIdSchedule
+                    AND MA.MAIdAgencie = ?
+                    AND MA.MADate = ?
+                WHERE SC.SCActive = 1
+                ORDER BY SC.SCTime`;
+  const [rows] = await pool.execute(query, [agencyId, date]);
+  return rows;
+}
+
+export async function addMaintenance(idMotorcycle: number, idAgency: number, idSchedule: number, idUser: number, date: string, miles: number, observations: string): Promise<ResultSetHeader> {
+  const query = `INSERT INTO maintenance (MOIdMoto, AGIdAgencie, SCIdSchedule, USId, MADate, MAMiles, MAObservations) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+  const [result] = await pool.execute<ResultSetHeader>(query, [idMotorcycle, idAgency, idSchedule, idUser, date, miles, observations]);
+  return result;
+}
