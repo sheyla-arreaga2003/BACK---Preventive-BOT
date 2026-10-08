@@ -403,6 +403,6 @@ export async function getPendingReminders(limit: number = 50): Promise<any[]> {
 }
 
 export async function updateReminderState(reminderId: number, newState: number): Promise<void> {
-  const query = `UPDATE reminder SET REState = ? WHERE REIdReminder = ?`;
+  const query = `UPDATE reminder SET REState = ?, RESentAt = NOW() WHERE REIdReminder = ?`;
   await pool.execute(query, [newState, reminderId]);
 }
