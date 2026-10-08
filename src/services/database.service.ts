@@ -292,10 +292,30 @@ export async function getScheduleByAgencyId(agencyId: number, date: string): Pro
   return rows;
 }
 
-export async function addMaintenance(idMotorcycle: number, idAgency: number, idSchedule: number, idUser: number, date: string, miles: number, observations: string): Promise<ResultSetHeader> {
+export async function addMaintenance(idMotorcycle: number, idAgency: number, idSchedule: number, idUser: number, date: string, miles: number, observations: string): Promise<any> {
   const query = `INSERT INTO maintenance (MOIdMoto, AGIdAgencie, SCIdSchedule, USId, MADate, MAMiles, MAObservations) VALUES (?, ?, ?, ?, ?, ?, ?)`;
   const [result] = await pool.execute<ResultSetHeader>(query, [idMotorcycle, idAgency, idSchedule, idUser, date, miles, observations]);
-  return result;
+  // Make a select query to get the last inserted maintenance record
+  const selectQuery = `SELECT MA.MAMaintenance, CONCAT(CU.CUName, ' ', CU.CULastName) AS ClientName, CU.CUMail Mail, MA.MADate, SC.SCTime MATime, MO.MOModel Model, MO.MOPlate Plate, AG.AGName Agency FROM maintenance MA
+                      INNER JOIN agencies AG ON AG.AGIdAgencie = MA.AGIdAgencie
+                      INNER JOIN schedules SC ON SC.SCIdSchedule = MA.SCIdSchedule
+                      INNER JOIN motorcycles MO ON MO.MOIdMoto = MA.MOIdMoto
+                      INNER JOIN customer CU ON CU.CUIdCustomer = MO.CUIdCustomer
+                      WHERE MA.MAMaintenance = ?`;
+  const [rows] = await pool.execute(selectQuery, [result.insertId]);
+  return rows; 
+}
+
+export async function getMailDataByMaintenanceId(maintenanceId: number): Promise<any> {
+  const query = `SELECT CONCAT(CU.CUName, ' ', CU.CULastName) AS ClientName, CU.CUMail Mail, MA.MADate, SC.SCTime MATime, MO.MOModel Model, MO.MOPlate Plate, AG.AGName Agency 
+  FROM maintenance MA
+  INNER JOIN agencies AG ON AG.AGIdAgencie = MA.AGIdAgencie
+  INNER JOIN schedules SC ON SC.SCIdSchedule = MA.SCIdSchedule
+  INNER JOIN motorcycles MO ON MO.MOIdMoto = MA.MOIdMoto
+  INNER JOIN customer CU ON CU.CUIdCustomer = MO.CUIdCustomer
+  WHERE MA.MAMaintenance = ?`;
+  const [rows] = await pool.execute(query, [maintenanceId]);
+  return rows;
 }
 
 export async function findMotorcyclesByInvoice(serieInvoice: string, numberInvoice: string): Promise<MaintenanceInvoiceMotorcycleRow[]> {
@@ -352,4 +372,37 @@ export async function findServicesByMaintenanceIds(maintenanceIds: readonly numb
   `;
   const [rows] = await pool.execute<MaintenanceServiceRow[]>(query, [...maintenanceIds]);
   return rows;
+}
+
+export async function addReminder(reminderData: any) {
+  const query = `INSERT INTO reminder (MAMaintenance, REDateProgram, REType, REState, REFSend, REDescription, RETitle) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
+  const [result] = await pool.execute(query, [
+    reminderData.MAMaintenance,
+    reminderData.REDateProgram,
+    reminderData.REType,
+    reminderData.REState,
+    reminderData.REFSend,
+    reminderData.REDescription,
+    reminderData.RETitle
+  ]);
+
+  return result;
+}
+
+export async function getPendingReminders(limit: number = 50): Promise<any[]> {
+  const query = `SELECT *
+        FROM reminder
+        WHERE REState = 1
+        AND REFSend = 'EMAIL'
+        AND REDateProgram <= NOW()
+        ORDER BY REDateProgram
+        LIMIT 50`;
+  const [rows] = await pool.execute(query);
+  return rows as any[];
+}
+
+export async function updateReminderState(reminderId: number, newState: number): Promise<void> {
+  const query = `UPDATE reminder SET REState = ? WHERE REIdReminder = ?`;
+  await pool.execute(query, [newState, reminderId]);
 }
