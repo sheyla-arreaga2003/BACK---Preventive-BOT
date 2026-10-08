@@ -1,60 +1,18 @@
 import pool from "../config/database.js";
 import { WITHOUT_REGISTERED_PLATE_SQL } from "./motorcycle-plate-status.service.js";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
-
-export interface UserRow extends RowDataPacket {
-  USId: number;
-  USName: string;
-  USLastName: string;
-  USEmail: string;
-  USPhone: string | null;
-  USPassword: string;
-  ROIdRol: number | null;
-}
-
-export interface AuthenticatedUserRow extends RowDataPacket {
-  USId: number;
-  USName: string;
-  USLastName: string;
-  USEmail: string;
-  USPhone: string | null;
-  ROIdRol: number | null;
-}
-
-interface MotorcycleLatestProcessRow extends RowDataPacket {
-  MOIdMoto: number;
-  MOBrand: string;
-  MOModel: string;
-  MOYear: string | number;
-  MOColor: string;
-  MOPlate: string | null;
-  STIdState: number | null;
-  STState: string | null;
-  PRFirstDate: string | null;
-}
-
-export interface MotorcycleInvoiceProcessData {
-  brand: string;
-  model: string;
-  year: string | number;
-  color: string;
-  plate: string | null;
-  latestState: {
-    id: number;
-    name: string;
-    registeredDate: string;
-  } | null;
-}
+import type * as Idb from "../interfaces/database.interface.js";
+import type { MaintenanceInvoiceMotorcycleRow, MaintenanceRecordRow, MaintenanceServiceRow, MaintenanceCountRow } from "../interfaces/maintenance.interface.js";
 
 export type MotorcycleInvoiceProcessResult =
-  | { status: "found"; data: MotorcycleInvoiceProcessData }
+  | { status: "found"; data: Idb.MotorcycleInvoiceProcessData }
   | { status: "not_found" }
   | { status: "ambiguous" };
 
 type MotorcycleInvoiceProcessQuery = (
   query: string,
   parameters: readonly [string, string],
-) => Promise<MotorcycleLatestProcessRow[]>;
+) => Promise<Idb.MotorcycleLatestProcessRow[]>;
 
 const motorcycleWithLatestProcessQuery = `
   SELECT
@@ -81,7 +39,7 @@ const motorcycleWithLatestProcessQuery = `
 `;
 
 const executeMotorcycleInvoiceProcessQuery: MotorcycleInvoiceProcessQuery = async (query, parameters) => {
-  const [rows] = await pool.execute<MotorcycleLatestProcessRow[]>(query, [...parameters]);
+  const [rows] = await pool.execute<Idb.MotorcycleLatestProcessRow[]>(query, [...parameters]);
   return rows;
 };
 
@@ -109,7 +67,7 @@ export async function getMotorcycleWithLatestProcessByInvoice(
   const motorcycle = rows[0];
   if (!motorcycle) return { status: "not_found" };
 
-  let latestState: MotorcycleInvoiceProcessData["latestState"] = null;
+  let latestState: Idb.MotorcycleInvoiceProcessData["latestState"] = null;
   if (
     motorcycle.STIdState !== null
     && motorcycle.STState !== null
@@ -224,20 +182,20 @@ export async function addProcess(idMotorcycle: number, idState: number, observat
   return result;
 }
 
-export async function getUserByEmail(email: string): Promise<UserRow[]> {
+export async function getUserByEmail(email: string): Promise<Idb.UserRow[]> {
   const query = `SELECT * FROM USERS WHERE USEmail = ?`;
-  const [rows] = await pool.execute<UserRow[]>(query, [email]);
+  const [rows] = await pool.execute<Idb.UserRow[]>(query, [email]);
   return rows;
 }
 
-export async function getAuthenticatedUserById(userId: number): Promise<AuthenticatedUserRow | null> {
+export async function getAuthenticatedUserById(userId: number): Promise<Idb.AuthenticatedUserRow | null> {
   const query = `
     SELECT USId, USName, USLastName, USEmail, USPhone, ROIdRol
     FROM USERS
     WHERE USId = ?
     LIMIT 1
   `;
-  const [rows] = await pool.execute<AuthenticatedUserRow[]>(query, [userId]);
+  const [rows] = await pool.execute<Idb.AuthenticatedUserRow[]>(query, [userId]);
   return rows[0] ?? null;
 }
 
@@ -306,4 +264,145 @@ export async function addClient(CUName: string, CULastName: string, CUDPI: strin
 export async function patchClient(nit: string, CUName: string, CULastName: string, CUPhone: string, CUMail: string, CUAddress: string, CUState: number): Promise<void> {
   const query = `UPDATE CUSTOMER SET CUName = ?, CULastName = ?, CUPhone = ?, CUMail = ?, CUAddress = ?, CUState = ? WHERE CUNIT = ?`;
   await pool.execute(query, [CUName, CULastName, CUPhone, CUMail, CUAddress, CUState, nit]);
+}
+
+export async function getAgencies(): Promise<any> {
+  const query = `SELECT * FROM AGENCIES WHERE AGActive = 1`;
+  const [rows] = await pool.execute(query);
+  return rows;
+}
+
+export async function getScheduleByAgencyId(agencyId: number, date: string): Promise<any> {
+  const query = `SELECT
+                    SC.SCIdSchedule,
+                    SC.SCTime,
+                    MA.MAMaintenance,
+                    CASE
+                        WHEN MA.MAMaintenance IS NULL THEN 1
+                        ELSE 0
+                    END AS Available
+                FROM schedules AS SC
+                LEFT JOIN maintenance AS MA
+                    ON MA.MAIdSchedule = SC.SCIdSchedule
+                    AND MA.MAIdAgencie = ?
+                    AND MA.MADate = ?
+                WHERE SC.SCActive = 1
+                ORDER BY SC.SCTime`;
+  const [rows] = await pool.execute(query, [agencyId, date]);
+  return rows;
+}
+
+export async function addMaintenance(idMotorcycle: number, idAgency: number, idSchedule: number, idUser: number, date: string, miles: number, observations: string): Promise<any> {
+  const query = `INSERT INTO maintenance (MOIdMoto, AGIdAgencie, SCIdSchedule, USId, MADate, MAMiles, MAObservations) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+  const [result] = await pool.execute<ResultSetHeader>(query, [idMotorcycle, idAgency, idSchedule, idUser, date, miles, observations]);
+  // Make a select query to get the last inserted maintenance record
+  const selectQuery = `SELECT MA.MAMaintenance, CONCAT(CU.CUName, ' ', CU.CULastName) AS ClientName, CU.CUMail Mail, MA.MADate, SC.SCTime MATime, MO.MOModel Model, MO.MOPlate Plate, AG.AGName Agency FROM maintenance MA
+                      INNER JOIN agencies AG ON AG.AGIdAgencie = MA.AGIdAgencie
+                      INNER JOIN schedules SC ON SC.SCIdSchedule = MA.SCIdSchedule
+                      INNER JOIN motorcycles MO ON MO.MOIdMoto = MA.MOIdMoto
+                      INNER JOIN customer CU ON CU.CUIdCustomer = MO.CUIdCustomer
+                      WHERE MA.MAMaintenance = ?`;
+  const [rows] = await pool.execute(selectQuery, [result.insertId]);
+  return rows; 
+}
+
+export async function getMailDataByMaintenanceId(maintenanceId: number): Promise<any> {
+  const query = `SELECT CONCAT(CU.CUName, ' ', CU.CULastName) AS ClientName, CU.CUMail Mail, MA.MADate, SC.SCTime MATime, MO.MOModel Model, MO.MOPlate Plate, AG.AGName Agency 
+  FROM maintenance MA
+  INNER JOIN agencies AG ON AG.AGIdAgencie = MA.AGIdAgencie
+  INNER JOIN schedules SC ON SC.SCIdSchedule = MA.SCIdSchedule
+  INNER JOIN motorcycles MO ON MO.MOIdMoto = MA.MOIdMoto
+  INNER JOIN customer CU ON CU.CUIdCustomer = MO.CUIdCustomer
+  WHERE MA.MAMaintenance = ?`;
+  const [rows] = await pool.execute(query, [maintenanceId]);
+  return rows;
+}
+
+export async function findMotorcyclesByInvoice(serieInvoice: string, numberInvoice: string): Promise<MaintenanceInvoiceMotorcycleRow[]> {
+  const query = `
+    SELECT MOIdMoto
+    FROM MOTORCYCLES
+    WHERE MOSerieInvoice = ?
+      AND MONumberInvoice = ?
+  `;
+  const [rows] = await pool.execute<MaintenanceInvoiceMotorcycleRow[]>(query, [serieInvoice, numberInvoice]);
+  return rows;
+}
+
+export async function countByMotorcycle(motorcycleId: number): Promise<number> {
+  const query = `
+    SELECT COUNT(*) AS total
+    FROM MAINTENANCE
+    WHERE MOIdMoto = ?
+  `;
+  const [rows] = await pool.execute<MaintenanceCountRow[]>(query, [motorcycleId]);
+  return rows[0]?.total ?? 0;
+}
+
+export async function findPageByMotorcycle(motorcycleId: number, pageSize: number, offset: number): Promise<MaintenanceRecordRow[]> {
+  const query = `
+    SELECT
+      MA.MAMaintenance,
+      DATE_FORMAT(MA.MADate, '%Y-%m-%d') AS MADate,
+      MA.MAMiles,
+      MA.MANextMiles,
+      MA.MANextDate
+    FROM MAINTENANCE MA
+    WHERE MA.MOIdMoto = ?
+    ORDER BY MA.MADate DESC, MA.MAMaintenance DESC
+    LIMIT ? OFFSET ?
+  `;
+  const [rows] = await pool.query<MaintenanceRecordRow[]>(query, [motorcycleId, pageSize, offset]);
+  return rows;
+}
+
+export async function findServicesByMaintenanceIds(maintenanceIds: readonly number[]): Promise<MaintenanceServiceRow[]> {
+  if (maintenanceIds.length === 0) return [];
+  const placeholders = maintenanceIds.map(() => "?").join(", ");
+  const query = `
+    SELECT
+      DM.MAMaintenance,
+      SE.SEName,
+      SE.SEDescription
+    FROM DETAIL_MAINTENANCE DM
+    LEFT JOIN SERVICES SE
+      ON SE.SEIdService = DM.SEIdService
+    WHERE DM.MAMaintenance IN (${placeholders})
+    ORDER BY DM.MAMaintenance DESC, DM.DMIdDetail ASC
+  `;
+  const [rows] = await pool.execute<MaintenanceServiceRow[]>(query, [...maintenanceIds]);
+  return rows;
+}
+
+export async function addReminder(reminderData: any) {
+  const query = `INSERT INTO reminder (MAMaintenance, REDateProgram, REType, REState, REFSend, REDescription, RETitle) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
+  const [result] = await pool.execute(query, [
+    reminderData.MAMaintenance,
+    reminderData.REDateProgram,
+    reminderData.REType,
+    reminderData.REState,
+    reminderData.REFSend,
+    reminderData.REDescription,
+    reminderData.RETitle
+  ]);
+
+  return result;
+}
+
+export async function getPendingReminders(limit: number = 50): Promise<any[]> {
+  const query = `SELECT *
+        FROM reminder
+        WHERE REState = 1
+        AND REFSend = 'EMAIL'
+        AND REDateProgram <= NOW()
+        ORDER BY REDateProgram
+        LIMIT 50`;
+  const [rows] = await pool.execute(query);
+  return rows as any[];
+}
+
+export async function updateReminderState(reminderId: number, newState: number): Promise<void> {
+  const query = `UPDATE reminder SET REState = ? WHERE REIdReminder = ?`;
+  await pool.execute(query, [newState, reminderId]);
 }

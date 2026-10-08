@@ -1,0 +1,12 @@
+export enum ReminderType {
+    SERVICE_CREATED = 'SERVICE_CREATED',
+    SERVICE_TOMORROW = 'SERVICE_TOMORROW',
+    SERVICE_TODAY = 'SERVICE_TODAY',
+    SERVICE_MISSED = 'SERVICE_MISSED'
+}
+export enum ReminderState {
+    CANCELLED = 0,
+    PENDING = 1,
+    SENT = 2,
+    ERROR = 3
+}
