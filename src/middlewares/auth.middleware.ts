@@ -1,5 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import { getAuthenticatedUserById, type AuthenticatedUserRow } from "../services/database.service.js";
+import { getAuthenticatedUserById } from "../services/database.service.js";
+import type { AuthenticatedUserRow } from "../interfaces/database.interface.js";
 import { validateToken, type TokenResult } from "../services/auth.service.js";
 
 export interface AuthIdentity {

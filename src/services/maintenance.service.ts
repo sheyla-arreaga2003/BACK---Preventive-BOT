@@ -1,6 +1,12 @@
 import type { MaintenanceInvoiceMotorcycleRow, MaintenanceRecordRow, MaintenanceServiceRow, MaintenanceCountRow } from "../interfaces/maintenance.interface.js";
 import { findMotorcyclesByInvoice, countByMotorcycle, findPageByMotorcycle, findServicesByMaintenanceIds } from "./database.service.js";
 
+export type {
+  MaintenanceInvoiceMotorcycleRow,
+  MaintenanceRecordRow,
+  MaintenanceServiceRow,
+} from "../interfaces/maintenance.interface.js";
+
 export interface MaintenanceReadRepository {
   findMotorcyclesByInvoice(serieInvoice: string, numberInvoice: string): Promise<MaintenanceInvoiceMotorcycleRow[]>;
   countByMotorcycle(motorcycleId: number): Promise<number>;
@@ -45,7 +51,16 @@ function validatePagination(page: number, pageSize: number): void {
   }
 }
 
-export function createMaintenanceInvoiceReader() {
+const mysqlMaintenanceReadRepository: MaintenanceReadRepository = {
+  findMotorcyclesByInvoice,
+  countByMotorcycle,
+  findPageByMotorcycle,
+  findServicesByMaintenanceIds,
+};
+
+export function createMaintenanceInvoiceReader(
+  repository: MaintenanceReadRepository = mysqlMaintenanceReadRepository,
+) {
   return async function getMaintenancesByInvoice(
     serieInvoice: string,
     numberInvoice: string,
@@ -60,7 +75,7 @@ export function createMaintenanceInvoiceReader() {
     }
     validatePagination(page, pageSize);
 
-    const motorcycles = await findMotorcyclesByInvoice(
+    const motorcycles = await repository.findMotorcyclesByInvoice(
       serieInvoice.trim(),
       numberInvoice.trim(),
     );
@@ -70,15 +85,15 @@ export function createMaintenanceInvoiceReader() {
     const motorcycle = motorcycles[0];
     if (!motorcycle) return { status: "not_found" };
 
-    const total = await countByMotorcycle(motorcycle.MOIdMoto);
+    const total = await repository.countByMotorcycle(motorcycle.MOIdMoto);
     const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
-    const maintenanceRows = await findPageByMotorcycle(
+    const maintenanceRows = await repository.findPageByMotorcycle(
       motorcycle.MOIdMoto,
       pageSize,
       (page - 1) * pageSize,
     );
     const maintenanceIds = maintenanceRows.map((maintenance) => maintenance.MAMaintenance);
-    const serviceRows = await findServicesByMaintenanceIds(maintenanceIds);
+    const serviceRows = await repository.findServicesByMaintenanceIds(maintenanceIds);
 
     const servicesByMaintenance = new Map<number, MaintenanceInvoicePage["maintenances"][number]["services"]>();
     for (const service of serviceRows) {
