@@ -2,39 +2,12 @@ import crypto from "crypto";
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import { redisClient, redisKey } from "../config/redis.js";
 import { env } from "../config/env.js";
-import { addUser, getUserByEmail, type UserRow } from "./database.service.js";
+import { addUser, getUserByEmail } from "./database.service.js";
+import type { UserRow } from "../interfaces/database.interface.js";
+import type * as IAuth from "../interfaces/auth.interface.js";
 
-interface AuthFailure {
-  success: false;
-  reason: "invalid_credentials" | "database_unavailable" | "session_store_unavailable";
-}
-
-interface LoginSuccess {
-  success: true;
-  sessionid: string;
-  token: string;
-  USName: string;
-}
-
-export interface SessionData {
-  userId: number;
-  email: string;
-}
-
-interface TokenSuccess {
-  success: true;
-  userId: number;
-  sessionid: string;
-  session: SessionData;
-}
-
-interface TokenFailure {
-  success: false;
-  reason: "invalid_token" | "invalid_session" | "session_store_unavailable";
-}
-
-type LoginResult = AuthFailure | LoginSuccess;
-export type TokenResult = TokenFailure | TokenSuccess;
+type LoginResult = IAuth.AuthFailure | IAuth.LoginSuccess;
+export type TokenResult = IAuth.TokenFailure | IAuth.TokenSuccess;
 
 interface RedisAuthClient {
   get(key: string): Promise<string | null>;
@@ -58,7 +31,7 @@ function isValidSessionId(value: unknown): value is string {
     && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-function parseSession(value: string): SessionData | null {
+function parseSession(value: string): IAuth.SessionData | null {
   try {
     const parsed: unknown = JSON.parse(value);
     if (typeof parsed !== "object" || parsed === null) return null;

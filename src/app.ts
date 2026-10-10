@@ -8,6 +8,8 @@ import authRoutes from "./routes/auth.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import clientsRoutes from "./routes/clients.routes.js";
 import chatbotRoutes from "./routes/chatbot.routes.js";
+import maintenanceRoutes from "./routes/maintenance.routes.js";
+import { processPendingReminders } from "./services/reminder.service.js";
 
 const app = express();
 app.use(cors({
@@ -24,6 +26,12 @@ app.use("/api/auth", authRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/clients", clientsRoutes);
 app.use("/api/chatbot", chatbotRoutes);
+app.use("/api/maintenance", maintenanceRoutes);
+
+setInterval(
+    processPendingReminders,
+    60_000
+);
 
 app.get("/", (_req, res) => {
   res.json({
