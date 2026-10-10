@@ -11,7 +11,9 @@
     "chatbot:index-documents": "tsx scripts/index-chatbot-documents.ts",
     "chatbot:evaluate-intents": "tsx scripts/evaluate-chatbot-intents.ts",
     "chatbot:evaluate-classification-fixes": "tsx scripts/evaluate-chatbot-classification-fixes.ts",
-    "chatbot:evaluate-customer-fixes": "tsx scripts/evaluate-chatbot-customer-fixes.ts"
+    "chatbot:evaluate-customer-fixes": "tsx scripts/evaluate-chatbot-customer-fixes.ts",
+    "seed:maintenance-demo": "tsx scripts/seed-maintenance-demo.ts",
+    "seed:service-catalog": "tsx scripts/seed-service-catalog.ts"
   },
   "keywords": [],
   "author": "",
