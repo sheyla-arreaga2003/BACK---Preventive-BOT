@@ -1,4 +1,4 @@
-import type { RowDataPacket } from "mysql2";
+import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import pool from "../config/database.js";
 
 interface CountRow extends RowDataPacket { total: number }
@@ -11,6 +11,7 @@ interface MotorcycleRow extends RowDataPacket {
   CUName: string | null;
   CULastName: string | null;
 }
+interface ServiceRow extends RowDataPacket { id: number; name: string; description: string }
 
 export interface MaintenanceMotorcycle {
   id: number;
@@ -23,6 +24,22 @@ export interface MaintenanceMotorcycle {
 export interface MaintenanceMotorcyclePage {
   motorcycles: MaintenanceMotorcycle[];
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
+}
+
+export interface MaintenanceSummary {
+  registeredMaintenance: number;
+}
+
+export interface MaintenanceServiceOption { id: number; name: string; description: string }
+export interface CreateMaintenanceInput {
+  motorcycleId: number;
+  userId: number;
+  date: string;
+  mileage: string | null;
+  observations: string | null;
+  nextMileage: string | null;
+  nextDate: string | null;
+  serviceIds: number[];
 }
 
 function validatePagination(page: number, pageSize: number): void {
@@ -41,6 +58,65 @@ function mapMotorcycle(row: MotorcycleRow): MaintenanceMotorcycle {
       ? null
       : { id: row.CUIdCustomer, name: customerName || "No registrado" },
   };
+}
+
+export async function getMaintenanceSummary(): Promise<MaintenanceSummary> {
+  const [rows] = await pool.execute<CountRow[]>(`
+    SELECT COUNT(*) AS total
+    FROM MAINTENANCE
+  `);
+  return { registeredMaintenance: rows[0]?.total ?? 0 };
+}
+
+export async function getMaintenanceServices(): Promise<MaintenanceServiceOption[]> {
+  const [rows] = await pool.execute<ServiceRow[]>(`
+    SELECT SEIdService AS id, SEName AS name, SEDescription AS description
+    FROM SERVICES
+    WHERE COALESCE(SEState, 1) = 1
+    ORDER BY SEName
+  `);
+  return rows;
+}
+
+export async function createMaintenance(input: CreateMaintenanceInput): Promise<{ id: number }> {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [motorcycles] = await connection.execute<RowDataPacket[]>(
+      "SELECT MOIdMoto FROM MOTORCYCLES WHERE MOIdMoto = ? LIMIT 1",
+      [input.motorcycleId],
+    );
+    if (motorcycles.length === 0) throw new TypeError("Motorcycle not found");
+
+    if (input.serviceIds.length > 0) {
+      const placeholders = input.serviceIds.map(() => "?").join(", ");
+      const [services] = await connection.execute<RowDataPacket[]>(
+        `SELECT SEIdService FROM SERVICES WHERE SEIdService IN (${placeholders}) AND COALESCE(SEState, 1) = 1`,
+        input.serviceIds,
+      );
+      if (services.length !== input.serviceIds.length) throw new TypeError("Invalid services");
+    }
+
+    const [result] = await connection.execute<ResultSetHeader>(`
+      INSERT INTO MAINTENANCE
+        (MOIdMoto, USId, MADate, MAMiles, MAObservations, MANextMiles, MANextDate)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [input.motorcycleId, input.userId, input.date, input.mileage, input.observations, input.nextMileage, input.nextDate]);
+
+    for (const serviceId of input.serviceIds) {
+      await connection.execute(
+        "INSERT INTO DETAIL_MAINTENANCE (MAMaintenance, SEIdService, SEAmount) VALUES (?, ?, ?)",
+        [result.insertId, serviceId, ""],
+      );
+    }
+    await connection.commit();
+    return { id: result.insertId };
+  } catch (error: unknown) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 export async function getMaintenanceMotorcycles(

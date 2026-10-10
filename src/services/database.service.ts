@@ -292,25 +292,72 @@ export async function getScheduleByAgencyId(agencyId: number, date: string): Pro
   return rows;
 }
 
-export async function addMaintenance(idMotorcycle: number, idAgency: number, idSchedule: number, idUser: number, date: string, miles: number, observations: string): Promise<any> {
-  const query = `INSERT INTO maintenance (MOIdMoto, AGIdAgencie, SCIdSchedule, USId, MADate, MAMiles, MAObservations) VALUES (?, ?, ?, ?, ?, ?, ?)`;
-  const [result] = await pool.execute<ResultSetHeader>(query, [idMotorcycle, idAgency, idSchedule, idUser, date, miles, observations]);
-  // Make a select query to get the last inserted maintenance record
-  const selectQuery = `SELECT MA.MAMaintenance, CONCAT(CU.CUName, ' ', CU.CULastName) AS ClientName, CU.CUMail Mail, MA.MADate, SC.SCTime MATime, MO.MOModel Model, MO.MOPlate Plate, AG.AGName Agency FROM maintenance MA
-                      INNER JOIN agencies AG ON AG.AGIdAgencie = MA.AGIdAgencie
-                      INNER JOIN schedules SC ON SC.SCIdSchedule = MA.SCIdSchedule
-                      INNER JOIN motorcycles MO ON MO.MOIdMoto = MA.MOIdMoto
-                      INNER JOIN customer CU ON CU.CUIdCustomer = MO.CUIdCustomer
-                      WHERE MA.MAMaintenance = ?`;
-  const [rows] = await pool.execute(selectQuery, [result.insertId]);
-  return rows; 
+interface CreatedMaintenanceRow extends RowDataPacket {
+  MAMaintenance: number;
+  ClientName: string;
+  Mail: string;
+  MADate: string;
+  MATime: string;
+  Model: string;
+  Plate: string;
+  Agency: string;
+}
+
+export async function addMaintenance(
+  idMotorcycle: number,
+  idAgency: number,
+  idSchedule: number,
+  idUser: number,
+  date: string,
+  miles: number,
+  observations: string,
+  serviceIds: readonly number[] = [],
+): Promise<CreatedMaintenanceRow[]> {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    if (serviceIds.length > 0) {
+      const placeholders = serviceIds.map(() => "?").join(", ");
+      const [services] = await connection.execute<RowDataPacket[]>(
+        `SELECT SEIdService FROM SERVICES WHERE SEIdService IN (${placeholders}) AND COALESCE(SEState, 1) = 1`,
+        [...serviceIds],
+      );
+      if (services.length !== serviceIds.length) throw new TypeError("Invalid services");
+    }
+
+    const query = `INSERT INTO maintenance (MOIdMoto, MAIdAgencie, MAIdSchedule, USId, MADate, MAMiles, MAObservations) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+    const [result] = await connection.execute<ResultSetHeader>(query, [idMotorcycle, idAgency, idSchedule, idUser, date, miles, observations]);
+
+    for (const serviceId of serviceIds) {
+      await connection.execute(
+        "INSERT INTO DETAIL_MAINTENANCE (MAMaintenance, SEIdService, SEAmount) VALUES (?, ?, ?)",
+        [result.insertId, serviceId, ""],
+      );
+    }
+
+    const selectQuery = `SELECT MA.MAMaintenance, CONCAT(CU.CUName, ' ', CU.CULastName) AS ClientName, CU.CUMail Mail, MA.MADate, SC.SCTime MATime, MO.MOModel Model, MO.MOPlate Plate, AG.AGName Agency FROM maintenance MA
+                        INNER JOIN agencies AG ON AG.AGIdAgencie = MA.MAIdAgencie
+                        INNER JOIN schedules SC ON SC.SCIdSchedule = MA.MAIdSchedule
+                        INNER JOIN motorcycles MO ON MO.MOIdMoto = MA.MOIdMoto
+                        INNER JOIN customer CU ON CU.CUIdCustomer = MO.CUIdCustomer
+                        WHERE MA.MAMaintenance = ?`;
+    const [rows] = await connection.execute<CreatedMaintenanceRow[]>(selectQuery, [result.insertId]);
+    await connection.commit();
+    return rows;
+  } catch (error: unknown) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 export async function getMailDataByMaintenanceId(maintenanceId: number): Promise<any> {
   const query = `SELECT CONCAT(CU.CUName, ' ', CU.CULastName) AS ClientName, CU.CUMail Mail, MA.MADate, SC.SCTime MATime, MO.MOModel Model, MO.MOPlate Plate, AG.AGName Agency 
   FROM maintenance MA
-  INNER JOIN agencies AG ON AG.AGIdAgencie = MA.AGIdAgencie
-  INNER JOIN schedules SC ON SC.SCIdSchedule = MA.SCIdSchedule
+  INNER JOIN agencies AG ON AG.AGIdAgencie = MA.MAIdAgencie
+  INNER JOIN schedules SC ON SC.SCIdSchedule = MA.MAIdSchedule
   INNER JOIN motorcycles MO ON MO.MOIdMoto = MA.MOIdMoto
   INNER JOIN customer CU ON CU.CUIdCustomer = MO.CUIdCustomer
   WHERE MA.MAMaintenance = ?`;
