@@ -28,10 +28,12 @@ app.use("/api/clients", clientsRoutes);
 app.use("/api/chatbot", chatbotRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
 
-setInterval(
+if (env.REMINDER_WORKER_ENABLED) {
+  setInterval(
     processPendingReminders,
-    60_000
-);
+    60_000,
+  );
+}
 
 app.get("/", (_req, res) => {
   res.json({
@@ -42,7 +44,7 @@ app.get("/", (_req, res) => {
 async function testDatabase() {
   try {
     const connection = await pool.getConnection();
-    console.log("Conexión exitosa a MySQL - mototec");
+    console.log("Conexión exitosa a MySQL");
     connection.release();
   } catch (error) {
     console.error("Error al conectar con MySQL:", error);

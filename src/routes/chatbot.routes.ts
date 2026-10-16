@@ -4,7 +4,12 @@ import OpenAI from "openai";
 import { authMiddleware, authorizeRoles } from "../middlewares/auth.middleware.js";
 import { clientChatMiddleware } from "../middlewares/client-chat.middleware.js";
 import { ChatModelIncompleteError } from "../services/chatbot-model.service.js";
-import { resolveMotorcycleByInvoice, resolveMotorcycleByPlate } from "../services/chatbot-read.service.js";
+import {
+  getMaintenancePageByMotorcycle,
+  getMotorcycleSummary,
+  resolveMotorcycleByInvoice,
+  resolveMotorcycleByPlate,
+} from "../services/chatbot-read.service.js";
 import { chatbotService, validateChatInput } from "../services/chatbot.service.js";
 import {
   clientSessionStore,
@@ -14,6 +19,12 @@ import { rateLimitStore } from "../services/rate-limit.service.js";
 import { redisKey } from "../config/redis.js";
 import { chatbotConversationStore, type ChatbotConversationScope } from "../services/chatbot-conversation.service.js";
 import type { AdminChatTarget, ChatHistoryMessage } from "../interfaces/chatbot.interface.js";
+import {
+  createClientMaintenanceAppointment,
+  getAppointmentAgencies,
+  getAvailableAppointmentSchedules,
+  getClientMaintenanceAppointments,
+} from "../services/maintenance-appointment.service.js";
 
 const router: ExpressRouter = Router();
 const ADMIN_ROLE_ID = 1;
@@ -21,6 +32,20 @@ const INVOICE_ATTEMPT_LIMIT = 5;
 const INVOICE_ATTEMPT_WINDOW_SECONDS = 15 * 60;
 const CHAT_REQUEST_LIMIT = 20;
 const CHAT_REQUEST_WINDOW_SECONDS = 60;
+
+function positiveId(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) throw new TypeError("Invalid id");
+  return value;
+}
+
+function validDate(value: unknown): string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new TypeError("Invalid date");
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) throw new TypeError("Invalid date");
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  if (value < today) throw new TypeError("Past date");
+  return value;
+}
 
 function parseConversationId(value: unknown): string | null {
   if (value === undefined || value === null) return null;
@@ -149,6 +174,80 @@ router.delete("/client/session", clientChatMiddleware, async (req, res) => {
     return res.status(204).send();
   } catch {
     return res.status(503).json({ message: "No fue posible cerrar la sesión de consulta" });
+  }
+});
+
+router.get("/client/overview", clientChatMiddleware, async (req, res) => {
+  try {
+    const session = req.clientChatSession;
+    if (!session) return res.status(401).json({ message: "Sesión de consulta inválida" });
+
+    const [motorcycle, maintenance] = await Promise.all([
+      getMotorcycleSummary(session.motorcycleId),
+      getMaintenancePageByMotorcycle(session.motorcycleId, 1, 20),
+    ]);
+    if (!motorcycle) return res.status(404).json({ message: "Motocicleta no encontrada" });
+
+    return res.json({ motorcycle, maintenance });
+  } catch {
+    return res.status(503).json({ message: "No se pudo cargar la información del cliente" });
+  }
+});
+
+router.get("/client/maintenance/agencies", clientChatMiddleware, async (_req, res) => {
+  try {
+    return res.json({ agencies: await getAppointmentAgencies() });
+  } catch {
+    return res.status(503).json({ message: "No se pudo cargar la información" });
+  }
+});
+
+router.get("/client/maintenance/schedules", clientChatMiddleware, async (req, res) => {
+  try {
+    const agencyId = Number(req.query.agencyId);
+    if (!Number.isSafeInteger(agencyId) || agencyId <= 0) throw new TypeError("Invalid agency");
+    const date = validDate(req.query.date);
+    return res.json({ schedules: await getAvailableAppointmentSchedules(agencyId, date) });
+  } catch (error: unknown) {
+    if (error instanceof TypeError) return res.status(400).json({ message: "Revisa la agencia y la fecha" });
+    return res.status(503).json({ message: "No se pudo cargar la disponibilidad" });
+  }
+});
+
+router.get("/client/maintenance/appointments", clientChatMiddleware, async (req, res) => {
+  try {
+    if (!req.clientChatSession) return res.status(401).json({ message: "Sesión de consulta inválida" });
+    return res.json({ appointments: await getClientMaintenanceAppointments(req.clientChatSession.motorcycleId) });
+  } catch {
+    return res.status(503).json({ message: "No se pudieron cargar las citas" });
+  }
+});
+
+router.post("/client/maintenance/appointments", clientChatMiddleware, async (req, res) => {
+  try {
+    if (!req.clientChatSession) return res.status(401).json({ message: "Sesión de consulta inválida" });
+    const body = req.body as Record<string, unknown>;
+    const agencyId = positiveId(body.agencyId);
+    const scheduleId = positiveId(body.scheduleId);
+    const date = validDate(body.date);
+    const observations = body.observations === undefined || body.observations === null || body.observations === ""
+      ? null
+      : typeof body.observations === "string" && body.observations.trim().length <= 500
+        ? body.observations.trim()
+        : (() => { throw new TypeError("Invalid observations"); })();
+    const created = await createClientMaintenanceAppointment({
+      motorcycleId: req.clientChatSession.motorcycleId,
+      agencyId,
+      scheduleId,
+      date,
+      observations,
+    });
+    return res.status(201).json({ id: created.id, message: "Cita de mantenimiento agendada correctamente" });
+  } catch (error: unknown) {
+    const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "ER_DUP_ENTRY";
+    if (duplicate || error instanceof RangeError) return res.status(409).json({ message: "Ese horario ya no está disponible" });
+    if (error instanceof TypeError) return res.status(400).json({ message: "Revisa los datos de la cita" });
+    return res.status(503).json({ message: "No fue posible agendar la cita" });
   }
 });
 

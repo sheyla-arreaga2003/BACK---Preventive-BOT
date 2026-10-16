@@ -17,4 +17,5 @@ export const env = Object.freeze({
   PORT: Number(process.env.PORT) || 3000,
   CHATBOT_RAG_ENABLED: process.env.CHATBOT_RAG_ENABLED?.trim().toLowerCase() === "true",
   CHATBOT_DOCUMENT_INDEX_PATH: process.env.CHATBOT_DOCUMENT_INDEX_PATH?.trim() || "var/chatbot-documents/index.json",
+  REMINDER_WORKER_ENABLED: process.env.REMINDER_WORKER_ENABLED?.trim().toLowerCase() !== "false",
 });

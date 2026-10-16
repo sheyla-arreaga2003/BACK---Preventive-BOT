@@ -3,6 +3,7 @@ import { WITHOUT_REGISTERED_PLATE_SQL } from "./motorcycle-plate-status.service.
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type * as Idb from "../interfaces/database.interface.js";
 import type { MaintenanceInvoiceMotorcycleRow, MaintenanceRecordRow, MaintenanceServiceRow, MaintenanceCountRow } from "../interfaces/maintenance.interface.js";
+import { getPlateTrackingByMotorcycle } from "./plate-tracking.service.js";
 
 export type MotorcycleInvoiceProcessResult =
   | { status: "found"; data: Idb.MotorcycleInvoiceProcessData }
@@ -221,10 +222,14 @@ export async function getMotorcyclePendingPlates(page: number = 1, pageSize: num
   
   const query = `SELECT * FROM MOTORCYCLES WHERE ${WITHOUT_REGISTERED_PLATE_SQL} ORDER BY MOIdMoto LIMIT ? OFFSET ?`;
   
-  const [rows] = await pool.query(query, [pageSize, offset]);
+  const [rows] = await pool.query<Array<RowDataPacket & { MOIdMoto: number }>>(query, [pageSize, offset]);
+  const data = await Promise.all(rows.map(async (row) => ({
+    ...row,
+    plateTracking: await getPlateTrackingByMotorcycle(row.MOIdMoto),
+  })));
 
   return {
-    data: rows,
+    data,
     pagination: {
       page,
       pageSize,
@@ -276,19 +281,31 @@ export async function getScheduleByAgencyId(agencyId: number, date: string): Pro
   const query = `SELECT
                     SC.SCIdSchedule,
                     SC.SCTime,
-                    MA.MAMaintenance,
+                    (SELECT MA.MAMaintenance
+                       FROM maintenance AS MA
+                      WHERE MA.MAIdSchedule = SC.SCIdSchedule
+                        AND MA.MAIdAgencie = ?
+                        AND MA.MADate = ?
+                      LIMIT 1) AS MAMaintenance,
                     CASE
-                        WHEN MA.MAMaintenance IS NULL THEN 1
+                        WHEN NOT EXISTS (
+                          SELECT 1 FROM maintenance AS MA
+                           WHERE MA.MAIdSchedule = SC.SCIdSchedule
+                             AND MA.MAIdAgencie = ?
+                             AND MA.MADate = ?
+                        ) AND NOT EXISTS (
+                          SELECT 1 FROM MAINTENANCE_APPOINTMENT AS MAP
+                           WHERE MAP.MAIdSchedule = SC.SCIdSchedule
+                             AND MAP.MAIdAgencie = ?
+                             AND MAP.MAPDate = ?
+                             AND MAP.MAPStatus = 'PROGRAMADO'
+                        ) THEN 1
                         ELSE 0
                     END AS Available
                 FROM schedules AS SC
-                LEFT JOIN maintenance AS MA
-                    ON MA.MAIdSchedule = SC.SCIdSchedule
-                    AND MA.MAIdAgencie = ?
-                    AND MA.MADate = ?
                 WHERE SC.SCActive = 1
                 ORDER BY SC.SCTime`;
-  const [rows] = await pool.execute(query, [agencyId, date]);
+  const [rows] = await pool.execute(query, [agencyId, date, agencyId, date, agencyId, date]);
   return rows;
 }
 

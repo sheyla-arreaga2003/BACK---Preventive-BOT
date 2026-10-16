@@ -5,7 +5,7 @@ import {
   addMotorcycle,
   getClientByNit,
   addProcess,
-  getMotorcycleByInvoice,
+  getMotorcycleWithLatestProcessByInvoice,
   getMotorcycleByPlate,
   getMotorcyclePendingPlates,
 } from "../services/database.service.js";
@@ -160,18 +160,33 @@ router.get("/", async (req, res) => {
   }
 
   try {
-    const motorcycles = await getMotorcycleByInvoice(serieInvoice, numberInvoice);
+    const result = await getMotorcycleWithLatestProcessByInvoice(
+      serieInvoice,
+      numberInvoice,
+    );
 
-    if (motorcycles.length === 0) {
+    if (result.status === "not_found") {
       return res.status(404).json({
         message: "Motocicleta no encontrada",
       });
     }
 
-    return res.json(motorcycles[0]);
+    if (result.status === "ambiguous") {
+      return res.status(409).json({
+        message: "La factura identifica más de una motocicleta",
+      });
+    }
+
+    return res.json(result.data);
   } catch (error: unknown) {
-    return res.status(500).json({
-      message: "Error obteniendo la motocicleta: " + error,
+    if (error instanceof TypeError) {
+      return res.status(400).json({
+        message: "Serie y número de factura son obligatorios",
+      });
+    }
+
+    return res.status(503).json({
+      message: "No se pudo consultar la información en este momento",
     });
   }
 });
