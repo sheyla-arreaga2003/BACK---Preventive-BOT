@@ -2,6 +2,7 @@ import type { RowDataPacket } from "mysql2";
 import pool from "../config/database.js";
 import type { MaintenancePage, MotorcycleSummary } from "../interfaces/chatbot.interface.js";
 import { WITHOUT_REGISTERED_PLATE_SQL, withoutRegisteredPlateSql } from "./motorcycle-plate-status.service.js";
+import { getPlateTrackingByMotorcycle } from "./plate-tracking.service.js";
 
 interface MotorcycleRow extends RowDataPacket {
   MOIdMoto: number;
@@ -111,6 +112,7 @@ export async function getMotorcycleSummary(motorcycleId: number): Promise<Motorc
   `, [motorcycleId]);
   const row = rows[0];
   if (!row) return null;
+  const plateTracking = await getPlateTrackingByMotorcycle(motorcycleId);
   return {
     brand: row.MOBrand,
     model: row.MOModel,
@@ -120,6 +122,7 @@ export async function getMotorcycleSummary(motorcycleId: number): Promise<Motorc
     latestPlateState: row.STIdState !== null && row.STState !== null && row.PRFirstDate !== null
       ? { id: row.STIdState, name: row.STState, registeredDate: row.PRFirstDate }
       : null,
+    plateTracking,
   };
 }
 

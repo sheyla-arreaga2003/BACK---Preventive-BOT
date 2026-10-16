@@ -8,6 +8,7 @@ import {
   getMaintenanceServices,
   createMaintenance,
 } from "../services/maintenance-admin.service.js";
+import { getAdminMaintenanceAppointments } from "../services/maintenance-appointment.service.js";
 
 const router: ExpressRouter = Router();
 const ADMIN_ROLE_ID = 1;
@@ -35,6 +36,18 @@ router.get("/services", async (_req, res) => {
     return res.json({ services: await getMaintenanceServices() });
   } catch {
     return res.status(503).json({ message: "No fue posible consultar la información" });
+  }
+});
+
+router.get("/appointments", async (req, res) => {
+  try {
+    const page = positiveInteger(req.query.page, 1);
+    const pageSize = positiveInteger(req.query.pageSize, 10);
+    if (pageSize > 50) return res.status(400).json({ message: "El tamaño de página no es válido" });
+    return res.json(await getAdminMaintenanceAppointments(page, pageSize));
+  } catch (error: unknown) {
+    if (error instanceof TypeError || error instanceof RangeError) return res.status(400).json({ message: "Revisa los parámetros" });
+    return res.status(503).json({ message: "No se pudieron cargar las citas" });
   }
 });
 
