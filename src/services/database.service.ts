@@ -3,6 +3,7 @@ import { WITHOUT_REGISTERED_PLATE_SQL } from "./motorcycle-plate-status.service.
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type * as Idb from "../interfaces/database.interface.js";
 import type { MaintenanceInvoiceMotorcycleRow, MaintenanceRecordRow, MaintenanceServiceRow, MaintenanceCountRow } from "../interfaces/maintenance.interface.js";
+import { getPlateTrackingByMotorcycle } from "./plate-tracking.service.js";
 
 export type MotorcycleInvoiceProcessResult =
   | { status: "found"; data: Idb.MotorcycleInvoiceProcessData }
@@ -221,10 +222,14 @@ export async function getMotorcyclePendingPlates(page: number = 1, pageSize: num
   
   const query = `SELECT * FROM MOTORCYCLES WHERE ${WITHOUT_REGISTERED_PLATE_SQL} ORDER BY MOIdMoto LIMIT ? OFFSET ?`;
   
-  const [rows] = await pool.query(query, [pageSize, offset]);
+  const [rows] = await pool.query<Array<RowDataPacket & { MOIdMoto: number }>>(query, [pageSize, offset]);
+  const data = await Promise.all(rows.map(async (row) => ({
+    ...row,
+    plateTracking: await getPlateTrackingByMotorcycle(row.MOIdMoto),
+  })));
 
   return {
-    data: rows,
+    data,
     pagination: {
       page,
       pageSize,

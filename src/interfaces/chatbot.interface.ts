@@ -1,3 +1,5 @@
+import type { PlateTracking } from "../services/plate-tracking.service.js";
+
 export type ChatRole = "user" | "assistant";
 
 export interface ChatHistoryMessage {
@@ -25,6 +27,7 @@ export interface MotorcycleSummary {
     name: string;
     registeredDate: string;
   } | null;
+  plateTracking?: PlateTracking;
 }
 
 export interface MaintenancePage {
