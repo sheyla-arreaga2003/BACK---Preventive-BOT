@@ -3,6 +3,8 @@ import pool from "../config/database.js";
 
 interface AgencyRow extends RowDataPacket { id: number; name: string }
 interface ScheduleRow extends RowDataPacket { id: number; time: string }
+interface AppointmentServiceRow extends RowDataPacket { appointmentId: number; id: number; name: string; description: string }
+export interface AppointmentRequestedService { id: number; name: string; description: string }
 interface AppointmentRow extends RowDataPacket {
   id: number;
   motorcycleId: number;
@@ -12,6 +14,7 @@ interface AppointmentRow extends RowDataPacket {
   agency: string;
   date: string;
   time: string;
+  mileage: string | null;
   observations: string | null;
   status: "PROGRAMADO";
 }
@@ -25,8 +28,10 @@ export interface MaintenanceAppointment {
   agency: string;
   date: string;
   time: string;
+  mileage: string | null;
   observations: string | null;
   status: "PROGRAMADO";
+  services: AppointmentRequestedService[];
 }
 
 export interface AppointmentPage {
@@ -34,7 +39,7 @@ export interface AppointmentPage {
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
 }
 
-function mapAppointment(row: AppointmentRow): MaintenanceAppointment {
+function mapAppointment(row: AppointmentRow, services: AppointmentRequestedService[] = []): MaintenanceAppointment {
   return {
     id: row.id,
     motorcycleId: row.motorcycleId,
@@ -44,9 +49,21 @@ function mapAppointment(row: AppointmentRow): MaintenanceAppointment {
     agency: row.agency,
     date: row.date,
     time: row.time,
+    mileage: row.mileage,
     observations: row.observations,
     status: row.status,
+    services,
   };
+}
+
+export async function getAppointmentServices(): Promise<AppointmentRequestedService[]> {
+  const [rows] = await pool.execute<Array<RowDataPacket & AppointmentRequestedService>>(`
+    SELECT SEIdService AS id, SEName AS name, SEDescription AS description
+    FROM SERVICES
+    WHERE COALESCE(SEState, 1) = 1
+    ORDER BY SEName
+  `);
+  return rows;
 }
 
 export async function getAppointmentAgencies(): Promise<Array<{ id: number; name: string }>> {
@@ -94,7 +111,9 @@ export async function createClientMaintenanceAppointment(input: {
   agencyId: number;
   scheduleId: number;
   date: string;
+  mileage: string;
   observations: string | null;
+  serviceIds: number[];
 }): Promise<{ id: number }> {
   const connection = await pool.getConnection();
   try {
@@ -109,6 +128,14 @@ export async function createClientMaintenanceAppointment(input: {
     `, [input.agencyId, input.scheduleId, input.motorcycleId]);
     if (valid.length === 0) throw new TypeError("Invalid appointment data");
 
+    if (input.serviceIds.length === 0) throw new TypeError("At least one service is required");
+    const placeholders = input.serviceIds.map(() => "?").join(", ");
+    const [services] = await connection.execute<RowDataPacket[]>(`
+      SELECT SEIdService FROM SERVICES
+      WHERE SEIdService IN (${placeholders}) AND COALESCE(SEState, 1) = 1
+    `, input.serviceIds);
+    if (services.length !== input.serviceIds.length) throw new TypeError("Invalid services");
+
     const [occupied] = await connection.execute<RowDataPacket[]>(`
       SELECT MAMaintenance
       FROM MAINTENANCE
@@ -120,9 +147,15 @@ export async function createClientMaintenanceAppointment(input: {
 
     const [result] = await connection.execute<ResultSetHeader>(`
       INSERT INTO MAINTENANCE_APPOINTMENT
-        (MOIdMoto, MAIdAgencie, MAIdSchedule, MAPDate, MAPObservations)
-      VALUES (?, ?, ?, ?, ?)
-    `, [input.motorcycleId, input.agencyId, input.scheduleId, input.date, input.observations]);
+        (MOIdMoto, MAIdAgencie, MAIdSchedule, MAPDate, MAPMileage, MAPObservations)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [input.motorcycleId, input.agencyId, input.scheduleId, input.date, input.mileage, input.observations]);
+    for (const serviceId of input.serviceIds) {
+      await connection.execute(
+        "INSERT INTO MAINTENANCE_APPOINTMENT_SERVICE (MAPIdAppointment, SEIdService) VALUES (?, ?)",
+        [result.insertId, serviceId],
+      );
+    }
     await connection.commit();
     return { id: result.insertId };
   } catch (error: unknown) {
@@ -142,6 +175,7 @@ const appointmentSelect = `
          AG.AGName AS agency,
          DATE_FORMAT(MAP.MAPDate, '%Y-%m-%d') AS date,
          TIME_FORMAT(SC.SCTime, '%H:%i:%s') AS time,
+         MAP.MAPMileage AS mileage,
          MAP.MAPObservations AS observations,
          MAP.MAPStatus AS status
   FROM MAINTENANCE_APPOINTMENT MAP
@@ -151,12 +185,33 @@ const appointmentSelect = `
   JOIN SCHEDULES SC ON SC.SCIdSchedule = MAP.MAIdSchedule
 `;
 
+async function mapAppointmentsWithServices(rows: AppointmentRow[]): Promise<MaintenanceAppointment[]> {
+  const ids = rows.map((row) => row.id);
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  const [serviceRows] = await pool.execute<AppointmentServiceRow[]>(`
+    SELECT MAS.MAPIdAppointment AS appointmentId,
+           SE.SEIdService AS id, SE.SEName AS name, SE.SEDescription AS description
+    FROM MAINTENANCE_APPOINTMENT_SERVICE MAS
+    INNER JOIN SERVICES SE ON SE.SEIdService = MAS.SEIdService
+    WHERE MAS.MAPIdAppointment IN (${placeholders})
+    ORDER BY SE.SEName
+  `, ids);
+  const byAppointment = new Map<number, AppointmentRequestedService[]>();
+  for (const service of serviceRows) {
+    const current = byAppointment.get(service.appointmentId) ?? [];
+    current.push({ id: service.id, name: service.name, description: service.description });
+    byAppointment.set(service.appointmentId, current);
+  }
+  return rows.map((row) => mapAppointment(row, byAppointment.get(row.id) ?? []));
+}
+
 export async function getClientMaintenanceAppointments(motorcycleId: number): Promise<MaintenanceAppointment[]> {
   const [rows] = await pool.execute<AppointmentRow[]>(`${appointmentSelect}
     WHERE MAP.MOIdMoto = ? AND MAP.MAPStatus = 'PROGRAMADO'
     ORDER BY MAP.MAPDate, SC.SCTime, MAP.MAPIdAppointment
   `, [motorcycleId]);
-  return rows.map(mapAppointment);
+  return mapAppointmentsWithServices(rows);
 }
 
 export async function getAdminMaintenanceAppointments(page: number, pageSize: number): Promise<AppointmentPage> {
@@ -170,7 +225,7 @@ export async function getAdminMaintenanceAppointments(page: number, pageSize: nu
     LIMIT ? OFFSET ?
   `, [pageSize, (page - 1) * pageSize]);
   return {
-    appointments: rows.map(mapAppointment),
+    appointments: await mapAppointmentsWithServices(rows),
     pagination: { page, pageSize, total, totalPages: total === 0 ? 0 : Math.ceil(total / pageSize) },
   };
 }

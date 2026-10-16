@@ -24,6 +24,7 @@ import {
   getAppointmentAgencies,
   getAvailableAppointmentSchedules,
   getClientMaintenanceAppointments,
+  getAppointmentServices,
 } from "../services/maintenance-appointment.service.js";
 
 const router: ExpressRouter = Router();
@@ -202,6 +203,14 @@ router.get("/client/maintenance/agencies", clientChatMiddleware, async (_req, re
   }
 });
 
+router.get("/client/maintenance/services", clientChatMiddleware, async (_req, res) => {
+  try {
+    return res.json({ services: await getAppointmentServices() });
+  } catch {
+    return res.status(503).json({ message: "No se pudieron cargar los servicios disponibles" });
+  }
+});
+
 router.get("/client/maintenance/schedules", clientChatMiddleware, async (req, res) => {
   try {
     const agencyId = Number(req.query.agencyId);
@@ -230,6 +239,13 @@ router.post("/client/maintenance/appointments", clientChatMiddleware, async (req
     const agencyId = positiveId(body.agencyId);
     const scheduleId = positiveId(body.scheduleId);
     const date = validDate(body.date);
+    const mileage = typeof body.mileage === "string" ? body.mileage.trim() : "";
+    if (!/^\d{1,50}$/.test(mileage)) throw new TypeError("Invalid mileage");
+    const rawServiceIds = body.serviceIds;
+    if (!Array.isArray(rawServiceIds) || rawServiceIds.length === 0 || rawServiceIds.some((id) => !Number.isSafeInteger(id) || Number(id) <= 0)) {
+      throw new TypeError("Invalid services");
+    }
+    const serviceIds = [...new Set(rawServiceIds.map(Number))];
     const observations = body.observations === undefined || body.observations === null || body.observations === ""
       ? null
       : typeof body.observations === "string" && body.observations.trim().length <= 500
@@ -240,7 +256,9 @@ router.post("/client/maintenance/appointments", clientChatMiddleware, async (req
       agencyId,
       scheduleId,
       date,
+      mileage,
       observations,
+      serviceIds,
     });
     return res.status(201).json({ id: created.id, message: "Cita de mantenimiento agendada correctamente" });
   } catch (error: unknown) {
