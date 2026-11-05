@@ -9,6 +9,7 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import clientsRoutes from "./routes/clients.routes.js";
 import chatbotRoutes from "./routes/chatbot.routes.js";
 import maintenanceRoutes from "./routes/maintenance.routes.js";
+import settingsRoutes from "./routes/settings.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import { processPendingReminders } from "./services/reminder.service.js";
 import { generateScheduledNotifications } from "./services/notification.service.js";
@@ -18,7 +19,8 @@ const app = express();
 app.use(cors({
   origin: [
     "http://localhost:5173",
-    "http://localhost:5174"
+    "http://localhost:5174",
+    "http://127.0.0.1:5177"
   ]
 }));
 
@@ -30,6 +32,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/clients", clientsRoutes);
 app.use("/api/chatbot", chatbotRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
+app.use("/api/settings", settingsRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 if (env.REMINDER_WORKER_ENABLED) {
