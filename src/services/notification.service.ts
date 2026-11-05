@@ -130,7 +130,7 @@ export async function notifyAppointmentEvent(
     [NotificationType.APPOINTMENT_NO_SHOW]: ["Cliente no asistió", "no asistió a su cita"] as const,
   }[type];
   await executor.execute(`
-    INSERT IGNORE INTO NOTIFICATION (NOType, NOTitle, NOMessage, NOEntity, NOEntityId, NODedupeKey)
+    INSERT INTO NOTIFICATION (NOType, NOTitle, NOMessage, NOEntity, NOEntityId, NODedupeKey)
     SELECT NS.NSType, ?,
            CONCAT(COALESCE(NULLIF(TRIM(CONCAT_WS(' ', CU.CUName, CU.CULastName)), ''), 'Cliente'),
                   ' ', ?, ' del ', DATE_FORMAT(MAP.MAPDate, '%Y-%m-%d'),
@@ -147,13 +147,11 @@ export async function notifyAppointmentEvent(
   `, [label[0], label[1], appointmentId, type]);
 }
 
-// Avisos generados por tiempo. INSERT IGNORE + NODedupeKey único = idempotente entre ejecuciones.
-// Se toma solo el último mantenimiento / último estado de cada moto.
 const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = [
   {
     type: NotificationType.MAINTENANCE_UPCOMING,
     sql: `
-      INSERT IGNORE INTO NOTIFICATION (NOType, NOTitle, NOMessage, NOEntity, NOEntityId, NODedupeKey)
+      INSERT INTO NOTIFICATION (NOType, NOTitle, NOMessage, NOEntity, NOEntityId, NODedupeKey)
       SELECT NS.NSType, 'Mantenimiento próximo',
              CONCAT('La moto ', CONCAT_WS(' ', MO.MOBrand, MO.MOModel), COALESCE(CONCAT(' (', NULLIF(TRIM(MO.MOPlate), ''), ')'), ''),
                     ' tiene mantenimiento el ', DATE_FORMAT(STR_TO_DATE(MA.MANextDate, '%Y-%m-%d'), '%Y-%m-%d'), '.'),
@@ -167,7 +165,7 @@ const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = 
   {
     type: NotificationType.MAINTENANCE_OVERDUE,
     sql: `
-      INSERT IGNORE INTO NOTIFICATION (NOType, NOTitle, NOMessage, NOEntity, NOEntityId, NODedupeKey)
+      INSERT INTO NOTIFICATION (NOType, NOTitle, NOMessage, NOEntity, NOEntityId, NODedupeKey)
       SELECT NS.NSType, 'Mantenimiento vencido',
              CONCAT('La moto ', CONCAT_WS(' ', MO.MOBrand, MO.MOModel), COALESCE(CONCAT(' (', NULLIF(TRIM(MO.MOPlate), ''), ')'), ''),
                     ' tenía mantenimiento el ', DATE_FORMAT(STR_TO_DATE(MA.MANextDate, '%Y-%m-%d'), '%Y-%m-%d'), '.'),
@@ -181,7 +179,7 @@ const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = 
   {
     type: NotificationType.PLATE_READY,
     sql: `
-      INSERT IGNORE INTO NOTIFICATION (NOType, NOTitle, NOMessage, NOEntity, NOEntityId, NODedupeKey)
+      INSERT INTO NOTIFICATION (NOType, NOTitle, NOMessage, NOEntity, NOEntityId, NODedupeKey)
       SELECT NS.NSType, 'Placas listas para entregar',
              CONCAT('Las placas de la moto ', CONCAT_WS(' ', MO.MOBrand, MO.MOModel), ' (chasis/VIN ',
                     COALESCE(NULLIF(MO.MOVin, ''), 'sin dato'), ') están en Mototec.'),
@@ -197,7 +195,7 @@ const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = 
   {
     type: NotificationType.PROCEDURE_STALLED,
     sql: `
-      INSERT IGNORE INTO NOTIFICATION (NOType, NOTitle, NOMessage, NOEntity, NOEntityId, NODedupeKey)
+      INSERT INTO NOTIFICATION (NOType, NOTitle, NOMessage, NOEntity, NOEntityId, NODedupeKey)
       SELECT NS.NSType, 'Trámite sin avance',
              CONCAT('El trámite de placas de ', CONCAT_WS(' ', MO.MOBrand, MO.MOModel), ' sigue en "', SP.STState,
                     '" desde el ', DATE_FORMAT(STR_TO_DATE(P.PRDateUpdate, '%Y-%m-%d'), '%Y-%m-%d'), '.'),
@@ -213,7 +211,7 @@ const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = 
   {
     type: NotificationType.EMAIL_FAILED,
     sql: `
-      INSERT IGNORE INTO NOTIFICATION (NOType, NOTitle, NOMessage, NOEntity, NOEntityId, NODedupeKey)
+      INSERT INTO NOTIFICATION (NOType, NOTitle, NOMessage, NOEntity, NOEntityId, NODedupeKey)
       SELECT NS.NSType, 'Correo no enviado',
              CONCAT('No se pudo enviar el recordatorio "', R.RETitle, '" programado para ', R.REDateProgram, '.'),
              'REMINDER', R.REIdReminder, CONCAT(NS.NSType, ':', R.REIdReminder)
