@@ -59,7 +59,7 @@ router.patch("/appointments/:id/status", async (req, res) => {
   try {
     const id = positiveInteger(req.params.id, 0);
     const status: unknown = req.body?.status;
-    if (status !== "CANCELLED" && status !== "NO_SHOW" && status !== "COMPLETED") {
+    if (status !== "CANCELADO" && status !== "NO_ASISTIO" && status !== "COMPLETADO") {
       return res.status(400).json({ message: "El estado no es válido" });
     }
     if (!(await closeMaintenanceAppointment(id, status))) {
