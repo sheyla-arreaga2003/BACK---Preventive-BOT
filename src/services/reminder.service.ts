@@ -1,6 +1,6 @@
 import { ReminderType, ReminderState } from '../enums/reminder.enum.js';
 import type { ReminderTemplateParams } from '../interfaces/reminder.interface.js';
-import { addReminder, getPendingReminders, getMailDataByMaintenanceId, updateReminderState } from './database.service.js';
+import { addReminder, getPendingReminders, getMailDataByMaintenanceId, markReminderFailed, updateReminderState } from './database.service.js';
 
 export function getReminderContent(data: ReminderTemplateParams) {
 
@@ -133,6 +133,7 @@ export async function processPendingReminders() {
                 `Error enviando reminder ${reminder.REIdReminder}`,
                 error
             );
+            await markReminderFailed(reminder.REIdReminder, error).catch(() => undefined);
         }
     }
 }

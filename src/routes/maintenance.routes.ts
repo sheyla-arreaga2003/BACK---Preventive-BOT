@@ -8,7 +8,11 @@ import {
   getMaintenanceServices,
   createMaintenance,
 } from "../services/maintenance-admin.service.js";
-import { getAdminMaintenanceAppointments } from "../services/maintenance-appointment.service.js";
+import {
+  closeMaintenanceAppointment,
+  getAdminMaintenanceAppointments,
+  rescheduleMaintenanceAppointment,
+} from "../services/maintenance-appointment.service.js";
 
 const router: ExpressRouter = Router();
 const ADMIN_ROLE_ID = 1;
@@ -48,6 +52,46 @@ router.get("/appointments", async (req, res) => {
   } catch (error: unknown) {
     if (error instanceof TypeError || error instanceof RangeError) return res.status(400).json({ message: "Revisa los parámetros" });
     return res.status(503).json({ message: "No se pudieron cargar las citas" });
+  }
+});
+
+router.patch("/appointments/:id/status", async (req, res) => {
+  try {
+    const id = positiveInteger(req.params.id, 0);
+    const status: unknown = req.body?.status;
+    if (status !== "CANCELLED" && status !== "NO_SHOW" && status !== "COMPLETED") {
+      return res.status(400).json({ message: "El estado no es válido" });
+    }
+    if (!(await closeMaintenanceAppointment(id, status))) {
+      return res.status(404).json({ message: "Cita programada no encontrada" });
+    }
+    return res.json({ message: "Cita actualizada" });
+  } catch (error: unknown) {
+    if (error instanceof TypeError || error instanceof RangeError) return res.status(400).json({ message: "Revisa los parámetros" });
+    return res.status(503).json({ message: "No se pudo actualizar la cita" });
+  }
+});
+
+router.patch("/appointments/:id/reschedule", async (req, res) => {
+  try {
+    const id = positiveInteger(req.params.id, 0);
+    const date: unknown = req.body?.date;
+    const scheduleId: unknown = req.body?.scheduleId;
+    if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)
+      || typeof scheduleId !== "number" || !Number.isSafeInteger(scheduleId) || scheduleId <= 0) {
+      return res.status(400).json({ message: "Revisa los datos de la cita" });
+    }
+    if (new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date) {
+      return res.status(400).json({ message: "La fecha no es válida" });
+    }
+    if (!(await rescheduleMaintenanceAppointment(id, date, scheduleId))) {
+      return res.status(404).json({ message: "Cita programada no encontrada" });
+    }
+    return res.json({ message: "Cita reprogramada" });
+  } catch (error: unknown) {
+    if (error instanceof RangeError) return res.status(409).json({ message: "El horario ya no está disponible" });
+    if (error instanceof TypeError) return res.status(400).json({ message: "Revisa los datos de la cita" });
+    return res.status(503).json({ message: "No se pudo reprogramar la cita" });
   }
 });
 

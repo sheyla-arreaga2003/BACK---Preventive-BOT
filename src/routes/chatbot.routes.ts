@@ -203,6 +203,7 @@ router.get("/client/maintenance/agencies", clientChatMiddleware, async (_req, re
 });
 
 router.get("/client/maintenance/schedules", clientChatMiddleware, async (req, res) => {
+  console.log("Received request for maintenance schedules with query:", req.query);
   try {
     const agencyId = Number(req.query.agencyId);
     if (!Number.isSafeInteger(agencyId) || agencyId <= 0) throw new TypeError("Invalid agency");
@@ -210,6 +211,7 @@ router.get("/client/maintenance/schedules", clientChatMiddleware, async (req, re
     return res.json({ schedules: await getAvailableAppointmentSchedules(agencyId, date) });
   } catch (error: unknown) {
     if (error instanceof TypeError) return res.status(400).json({ message: "Revisa la agencia y la fecha" });
+    console.error("Error in /client/maintenance/schedules route:", error);
     return res.status(503).json({ message: "No se pudo cargar la disponibilidad" });
   }
 });
@@ -247,6 +249,7 @@ router.post("/client/maintenance/appointments", clientChatMiddleware, async (req
     const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "ER_DUP_ENTRY";
     if (duplicate || error instanceof RangeError) return res.status(409).json({ message: "Ese horario ya no está disponible" });
     if (error instanceof TypeError) return res.status(400).json({ message: "Revisa los datos de la cita" });
+    console.error("Error in /client/maintenance/appointments route:", error);
     return res.status(503).json({ message: "No fue posible agendar la cita" });
   }
 });
