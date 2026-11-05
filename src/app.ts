@@ -9,7 +9,10 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import clientsRoutes from "./routes/clients.routes.js";
 import chatbotRoutes from "./routes/chatbot.routes.js";
 import maintenanceRoutes from "./routes/maintenance.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
 import { processPendingReminders } from "./services/reminder.service.js";
+import { generateScheduledNotifications } from "./services/notification.service.js";
+import { closeExpiredMaintenanceAppointments } from "./services/maintenance-appointment.service.js";
 
 const app = express();
 app.use(cors({
@@ -27,12 +30,18 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/clients", clientsRoutes);
 app.use("/api/chatbot", chatbotRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 if (env.REMINDER_WORKER_ENABLED) {
   setInterval(
     processPendingReminders,
     60_000,
   );
+  setInterval(() => {
+    closeExpiredMaintenanceAppointments()
+      .catch((error: unknown) => console.error("Error cerrando citas vencidas", error))
+      .then(generateScheduledNotifications);
+  }, 5 * 60_000);
 }
 
 app.get("/", (_req, res) => {

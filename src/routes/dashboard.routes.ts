@@ -49,10 +49,9 @@ router.get("/schedule", async (req, res) => {
   }
 });
 
-router.post("/maintenance", authMiddleware, authorizeRoles(1), async (req, res) => {
+router.post("/maintenance", async (req, res) => {
   try {
-    const { idMotorcycle, idAgency, idSchedule, date, miles, observations, serviceIds: rawServiceIds = [] } = req.body;
-    const idUser = req.auth?.user.id;
+    const { idMotorcycle, idAgency, idSchedule, idUser, date, miles, observations, serviceIds: rawServiceIds = [] } = req.body;
 
     if (!idMotorcycle) return res.status(400).json({ message: "idMotorcycle is required" });
     if (!idAgency) return res.status(400).json({ message: "idAgency is required" });
@@ -150,5 +149,7 @@ router.get("/test-email", async (req, res) => {
     });
   }
 });
+
+router.post("/")
 
 export default router;
