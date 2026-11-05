@@ -298,7 +298,7 @@ export async function getScheduleByAgencyId(agencyId: number, date: string): Pro
                            WHERE MAP.MAIdSchedule = SC.SCIdSchedule
                              AND MAP.MAIdAgencie = ?
                              AND MAP.MAPDate = ?
-                             AND MAP.MAPStatus = 'SCHEDULED'
+                             AND MAP.MAPStatus = 'PROGRAMADO'
                         ) THEN 1
                         ELSE 0
                     END AS Available

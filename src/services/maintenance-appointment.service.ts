@@ -15,7 +15,7 @@ interface AppointmentRow extends RowDataPacket {
   date: string;
   time: string;
   observations: string | null;
-  status: "SCHEDULED";
+  status: "PROGRAMADO";
 }
 
 export interface MaintenanceAppointment {
@@ -28,7 +28,7 @@ export interface MaintenanceAppointment {
   date: string;
   time: string;
   observations: string | null;
-  status: "SCHEDULED";
+  status: "PROGRAMADO";
 }
 
 export interface AppointmentPage {
@@ -84,7 +84,7 @@ export async function getAvailableAppointmentSchedules(
         WHERE MAP.MAIdAgencie = ?
           AND MAP.MAPDate = ?
           AND MAP.MAIdSchedule = SC.SCIdSchedule
-          AND MAP.MAPStatus = 'SCHEDULED'
+          AND MAP.MAPStatus = 'PROGRAMADO'
       )
     ORDER BY SC.SCTime
   `, [agencyId, agencyId, date, agencyId, date]);
@@ -135,14 +135,14 @@ export async function createClientMaintenanceAppointment(input: {
   }
 }
 
-export type AppointmentFinalStatus = "CANCELLED" | "NO_SHOW" | "COMPLETED";
+export type AppointmentFinalStatus = "CANCELADO" | "NO_ASISTIO" | "COMPLETADO";
 
 const STATUS_NOTIFICATION = {
-  CANCELLED: NotificationType.APPOINTMENT_CANCELLED,
-  NO_SHOW: NotificationType.APPOINTMENT_NO_SHOW,
+  CANCELADO: NotificationType.APPOINTMENT_CANCELLED,
+  NO_ASISTIO: NotificationType.APPOINTMENT_NO_SHOW,
 } as const;
 
-/** Cierra una cita SCHEDULED. Devuelve false si no existe o ya no estaba programada. */
+/** Cierra una cita PROGRAMADO. Devuelve false si no existe o ya no estaba programada. */
 export async function closeMaintenanceAppointment(id: number, status: AppointmentFinalStatus): Promise<boolean> {
   const connection = await pool.getConnection();
   try {
@@ -150,13 +150,13 @@ export async function closeMaintenanceAppointment(id: number, status: Appointmen
     const [result] = await connection.execute<ResultSetHeader>(`
       UPDATE MAINTENANCE_APPOINTMENT
       SET MAPStatus = ?, MAPStatusAt = NOW()
-      WHERE MAPIdAppointment = ? AND MAPStatus = 'SCHEDULED'
+      WHERE MAPIdAppointment = ? AND MAPStatus = 'PROGRAMADO'
     `, [status, id]);
     if (result.affectedRows === 0) {
       await connection.rollback();
       return false;
     }
-    if (status !== "COMPLETED") await notifyAppointmentEvent(connection, STATUS_NOTIFICATION[status], id);
+    if (status !== "COMPLETADO") await notifyAppointmentEvent(connection, STATUS_NOTIFICATION[status], id);
     await connection.commit();
     return true;
   } catch (error: unknown) {
@@ -169,19 +169,19 @@ export async function closeMaintenanceAppointment(id: number, status: Appointmen
 
 const NO_SHOW_GRACE_MINUTES = 60;
 
-/** Marca NO_SHOW (y avisa) las citas SCHEDULED cuya hora pasó hace más de NO_SHOW_GRACE_MINUTES. */
+/** Marca NO_ASISTIO (y avisa) las citas PROGRAMADO cuya hora pasó hace más de NO_SHOW_GRACE_MINUTES. */
 export async function closeExpiredMaintenanceAppointments(): Promise<number> {
   const [rows] = await pool.execute<Array<RowDataPacket & { id: number }>>(`
     SELECT MAP.MAPIdAppointment AS id
     FROM MAINTENANCE_APPOINTMENT MAP
     JOIN SCHEDULES SC ON SC.SCIdSchedule = MAP.MAIdSchedule
-    WHERE MAP.MAPStatus = 'SCHEDULED'
+    WHERE MAP.MAPStatus = 'PROGRAMADO'
       AND TIMESTAMP(MAP.MAPDate, SC.SCTime) < DATE_SUB(NOW(), INTERVAL ${NO_SHOW_GRACE_MINUTES} MINUTE)
   `);
   let closed = 0;
   for (const { id } of rows) {
     try {
-      if (await closeMaintenanceAppointment(id, "NO_SHOW")) closed++;
+      if (await closeMaintenanceAppointment(id, "NO_ASISTIO")) closed++;
     } catch (error: unknown) {
       console.error(`Error cerrando cita vencida ${id}`, error);
     }
@@ -189,7 +189,7 @@ export async function closeExpiredMaintenanceAppointments(): Promise<number> {
   return closed;
 }
 
-/** Mueve una cita SCHEDULED a otra fecha/horario de la misma agencia. Devuelve false si no existe. */
+/** Mueve una cita PROGRAMADO a otra fecha/horario de la misma agencia. Devuelve false si no existe. */
 export async function rescheduleMaintenanceAppointment(id: number, date: string, scheduleId: number): Promise<boolean> {
   const connection = await pool.getConnection();
   try {
@@ -197,7 +197,7 @@ export async function rescheduleMaintenanceAppointment(id: number, date: string,
     const [current] = await connection.execute<Array<RowDataPacket & { agencyId: number }>>(`
       SELECT MAIdAgencie AS agencyId
       FROM MAINTENANCE_APPOINTMENT
-      WHERE MAPIdAppointment = ? AND MAPStatus = 'SCHEDULED'
+      WHERE MAPIdAppointment = ? AND MAPStatus = 'PROGRAMADO'
       FOR UPDATE
     `, [id]);
     const agencyId = current[0]?.agencyId;
@@ -259,7 +259,7 @@ const appointmentSelect = `
 
 export async function getClientMaintenanceAppointments(motorcycleId: number): Promise<MaintenanceAppointment[]> {
   const [rows] = await pool.execute<AppointmentRow[]>(`${appointmentSelect}
-    WHERE MAP.MOIdMoto = ? AND MAP.MAPStatus = 'SCHEDULED'
+    WHERE MAP.MOIdMoto = ? AND MAP.MAPStatus = 'PROGRAMADO'
     ORDER BY MAP.MAPDate, SC.SCTime, MAP.MAPIdAppointment
   `, [motorcycleId]);
   return rows.map(mapAppointment);
@@ -267,11 +267,11 @@ export async function getClientMaintenanceAppointments(motorcycleId: number): Pr
 
 export async function getAdminMaintenanceAppointments(page: number, pageSize: number): Promise<AppointmentPage> {
   const [counts] = await pool.execute<Array<RowDataPacket & { total: number }>>(`
-    SELECT COUNT(*) AS total FROM MAINTENANCE_APPOINTMENT WHERE MAPStatus = 'SCHEDULED'
+    SELECT COUNT(*) AS total FROM MAINTENANCE_APPOINTMENT WHERE MAPStatus = 'PROGRAMADO'
   `);
   const total = counts[0]?.total ?? 0;
   const [rows] = await pool.query<AppointmentRow[]>(`${appointmentSelect}
-    WHERE MAP.MAPStatus = 'SCHEDULED'
+    WHERE MAP.MAPStatus = 'PROGRAMADO'
     ORDER BY MAP.MAPDate, SC.SCTime, MAP.MAPIdAppointment
     LIMIT ? OFFSET ?
   `, [pageSize, (page - 1) * pageSize]);
