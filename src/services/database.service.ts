@@ -298,7 +298,7 @@ export async function getScheduleByAgencyId(agencyId: number, date: string): Pro
                            WHERE MAP.MAIdSchedule = SC.SCIdSchedule
                              AND MAP.MAIdAgencie = ?
                              AND MAP.MAPDate = ?
-                             AND MAP.MAPStatus = 'PROGRAMADO'
+                             AND MAP.MAPStatus = 'SCHEDULED'
                         ) THEN 1
                         ELSE 0
                     END AS Available
@@ -464,6 +464,19 @@ export async function getPendingReminders(limit: number = 50): Promise<any[]> {
         LIMIT 50`;
   const [rows] = await pool.execute(query);
   return rows as any[];
+}
+
+const MAX_REMINDER_TRIES = 3;
+
+/** Registra el fallo; el recordatorio se reintenta hasta MAX_REMINDER_TRIES y luego queda en ERROR (3). */
+export async function markReminderFailed(reminderId: number, error: unknown): Promise<void> {
+  const message = (error instanceof Error ? error.message : String(error)).slice(0, 250);
+  const query = `UPDATE reminder
+        SET REState = IF(RETries + 1 >= ?, 3, REState),
+            REError = ?,
+            RETries = RETries + 1
+        WHERE REIdReminder = ?`;
+  await pool.execute(query, [MAX_REMINDER_TRIES, message, reminderId]);
 }
 
 export async function updateReminderState(reminderId: number, newState: number): Promise<void> {
