@@ -150,6 +150,6 @@ router.get("/test-email", async (req, res) => {
   }
 });
 
-router.post("/")
+// router.post("/")
 
 export default router;
