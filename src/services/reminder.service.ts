@@ -1,6 +1,26 @@
 import { ReminderType, ReminderState } from '../enums/reminder.enum.js';
 import type { ReminderTemplateParams } from '../interfaces/reminder.interface.js';
-import { addReminder, getPendingReminders, getMailDataByMaintenanceId, markReminderFailed, updateReminderState } from './database.service.js';
+import { addReminder, getPendingReminders, getMailDataByMaintenanceId, markReminderFailed, updateReminderState, updateReminderSubject } from './database.service.js';
+
+export function getReminderSubject(type: ReminderType): string {
+    switch (type) {
+        case ReminderType.SERVICE_CREATED:
+            return 'Tu servicio ha sido agendado | Mototec';
+        case ReminderType.SERVICE_TOMORROW:
+            return 'Tu servicio es mañana | Mototec';
+        case ReminderType.SERVICE_TODAY:
+            return '¡Tu servicio es hoy! | Mototec';
+        case ReminderType.SERVICE_MISSED:
+            return '¿Necesitas reagendar tu servicio? | Mototec';
+        case ReminderType.CUSTOM:
+            throw new Error('Los recordatorios personalizados utilizan el asunto redactado por el administrador');
+    }
+}
+
+export function withActualReminderSubject<T extends { REType: ReminderType; RETitle: string }>(data: T): T {
+    if (data.REType === ReminderType.CUSTOM) return data;
+    return { ...data, RETitle: getReminderSubject(data.REType) };
+}
 
 export function getReminderContent(data: ReminderTemplateParams) {
 
@@ -9,7 +29,7 @@ export function getReminderContent(data: ReminderTemplateParams) {
         case ReminderType.SERVICE_CREATED:
 
             return {
-                subject: 'Tu servicio ha sido agendado | Mototec',
+                subject: getReminderSubject(data.type),
 
                 badge: '✓ Servicio agendado',
 
@@ -34,7 +54,7 @@ export function getReminderContent(data: ReminderTemplateParams) {
         case ReminderType.SERVICE_TOMORROW:
 
             return {
-                subject: 'Tu servicio es mañana | Mototec',
+                subject: getReminderSubject(data.type),
 
                 badge: '◷ Servicio mañana',
 
@@ -59,7 +79,7 @@ export function getReminderContent(data: ReminderTemplateParams) {
         case ReminderType.SERVICE_TODAY:
 
             return {
-                subject: '¡Tu servicio es hoy! | Mototec',
+                subject: getReminderSubject(data.type),
 
                 badge: '● Servicio para hoy',
 
@@ -84,7 +104,7 @@ export function getReminderContent(data: ReminderTemplateParams) {
         case ReminderType.SERVICE_MISSED:
 
             return {
-                subject: '¿Necesitas reagendar tu servicio? | Mototec',
+                subject: getReminderSubject(data.type),
 
                 badge: 'Servicio pendiente',
 
@@ -104,12 +124,14 @@ export function getReminderContent(data: ReminderTemplateParams) {
                 notice:
                     'Si ya realizaste el servicio, puedes ignorar este mensaje.'
             };
+        case ReminderType.CUSTOM:
+            throw new Error('Los recordatorios personalizados no utilizan una plantilla automática');
     }
 }
 
 export async function generateReminder(data: any) {
-    // Funcion para insertar recordatorios en la base de datos, si es necesario.
-    const reminderId = await addReminder(data);
+    const reminderData = withActualReminderSubject(data);
+    const reminderId = await addReminder(reminderData);
     return reminderId;
 }
 
@@ -121,9 +143,19 @@ export async function processPendingReminders() {
 
         try {
 
-            const mailData = await getMailDataByMaintenanceId(reminder.MAMaintenance);
-
-            await sendReminderEmail(mailData[0]);
+            if (reminder.REType === ReminderType.CUSTOM) {
+                await sendCustomReminderEmail({
+                    to: reminder.RERecipient,
+                    subject: reminder.RETitle,
+                    message: reminder.REDescription,
+                });
+            } else {
+                const mailData = await getMailDataByMaintenanceId(reminder.MAMaintenance);
+                if (!mailData[0]) throw new Error('No se encontraron datos del mantenimiento');
+                const reminderType = reminder.REType as ReminderType;
+                await updateReminderSubject(reminder.REIdReminder, getReminderSubject(reminderType));
+                await sendReminderEmail(mailData[0], reminderType);
+            }
 
             await updateReminderState(reminder.REIdReminder, ReminderState.SENT);
 
@@ -138,7 +170,32 @@ export async function processPendingReminders() {
     }
 }
 
-export async function sendReminderEmail(data: any, type: ReminderType = ReminderType.SERVICE_CREATED) {
+function escapeHtml(value: string): string {
+    return value.replace(/[&<>'"]/g, (character) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[character] ?? character);
+}
+
+export async function sendCustomReminderEmail(
+    data: { to: string; subject: string; message: string },
+    sender: typeof sendMail = sendMail,
+): Promise<void> {
+    const safeMessage = escapeHtml(data.message).replace(/\r?\n/g, '<br>');
+    await sender({
+        to: data.to,
+        subject: data.subject,
+        html: `<div style="font-family:Arial,sans-serif;color:#172033;line-height:1.6;max-width:640px;margin:auto">
+          <h1 style="color:#e30613">MOTOTEC</h1><hr style="border:0;border-top:2px solid #e30613">
+          <h2>${escapeHtml(data.subject)}</h2><p>${safeMessage}</p><p><em>Equipo Mototec</em></p>
+        </div>`,
+    });
+}
+
+export async function sendReminderEmail(
+    data: any,
+    type: ReminderType = ReminderType.SERVICE_CREATED,
+    sender: typeof sendMail = sendMail,
+) {
 
     const email = generateReminderTemplate({
         type: type,
@@ -150,7 +207,7 @@ export async function sendReminderEmail(data: any, type: ReminderType = Reminder
         agency: data.Agency
     });
 
-    await sendMail({
+    await sender({
         to: data.Mail,
         subject: email.subject,
         html: email.html

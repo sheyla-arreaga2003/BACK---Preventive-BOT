@@ -194,7 +194,13 @@ export function detectImageMime(content: Buffer): "image/png" | "image/jpeg" | "
 const databaseRepository: SettingsRepository = {
   async getProfile(userId) {
     const [rows] = await pool.execute<UserProfileRow[]>(`
-      SELECT U.USId, U.USName, U.USLastName, U.USEmail, U.USPhone, U.ROIdRol, R.ROName
+      SELECT U.USId, U.USName, U.USLastName, U.USEmail, U.USPhone,
+             DATE_FORMAT(U.USFregister, '%Y-%m-%d') AS USFregister,
+             CASE WHEN U.USLastLoginAt IS NULL THEN NULL ELSE
+               CONCAT(DATE_FORMAT(U.USLastLoginAt, '%Y-%m-%dT%H:%i:%s.'),
+                      LEFT(DATE_FORMAT(U.USLastLoginAt, '%f'), 3), 'Z')
+             END AS USLastLoginAt,
+             U.ROIdRol, R.ROName
       FROM USERS U LEFT JOIN ROL R ON R.ROIdRol = U.ROIdRol WHERE U.USId = ? LIMIT 1
     `, [userId]);
     return rows[0] ?? null;
@@ -203,7 +209,12 @@ const databaseRepository: SettingsRepository = {
     const [rows] = await pool.execute<EmailCountRow[]>("SELECT COUNT(*) total FROM USERS WHERE LOWER(USEmail) = LOWER(?) AND USId <> ?", [email, userId]);
     return Number(rows[0]?.total ?? 0) > 0;
   },
-  async updateProfile(userId, name, email) { await pool.execute("UPDATE USERS SET USName = ?, USEmail = ? WHERE USId = ?", [name, email, userId]); },
+  async updateProfile(userId, name, lastName, email, phone) {
+    await pool.execute(
+      "UPDATE USERS SET USName = ?, USLastName = ?, USEmail = ?, USPhone = ? WHERE USId = ?",
+      [name, lastName, email, phone, userId],
+    );
+  },
   async getPasswordHash(userId) {
     const [rows] = await pool.execute<UserPasswordRow[]>("SELECT USPassword FROM USERS WHERE USId = ? LIMIT 1", [userId]);
     return rows[0]?.USPassword ?? null;
@@ -250,20 +261,27 @@ export function createSettingsService(repository: SettingsRepository = databaseR
     return {
       id: record.USId, name: record.USName, lastName: record.USLastName, email: record.USEmail,
       phone: record.USPhone, role: record.ROIdRol === null ? null : { id: record.ROIdRol, name: record.ROName },
+      registeredAt: record.USFregister,
+      lastLoginAt: record.USLastLoginAt,
       avatarUrl: await repository.getMedia(userId, "AVATAR") ? "/api/settings/avatar" : null,
     };
   }
 
   async function updateProfile(userId: number, input: Record<string, unknown>) {
-    assertAllowedFields(input, ["name", "email"]);
+    assertAllowedFields(input, ["name", "lastName", "email", "phone"]);
     const current = await repository.getProfile(userId);
     if (!current) throw new SettingsNotFoundError("User not found");
     const name = input.name === undefined ? current.USName : typeof input.name === "string" ? input.name.trim() : "";
+    const lastName = input.lastName === undefined ? current.USLastName : typeof input.lastName === "string" ? input.lastName.trim() : "";
     const email = input.email === undefined ? current.USEmail : typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+    const phoneValue = input.phone === undefined ? current.USPhone : input.phone;
+    const phone = phoneValue === null || phoneValue === "" ? null : typeof phoneValue === "string" ? phoneValue.trim() : "";
     if (!name || name.length > 100) throw new SettingsValidationError("Name is required and must not exceed 100 characters");
+    if (!lastName || lastName.length > 100) throw new SettingsValidationError("Last name is required and must not exceed 100 characters");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 150) throw new SettingsValidationError("Invalid email");
+    if (phone !== null && (!/^[+()\d\s-]{7,25}$/.test(phone) || phone.length > 25)) throw new SettingsValidationError("Invalid phone");
     if (await repository.isEmailUsedByAnotherUser(userId, email)) throw new SettingsConflictError("Email already in use");
-    await repository.updateProfile(userId, name, email);
+    await repository.updateProfile(userId, name, lastName, email, phone);
     return profile(userId);
   }
 

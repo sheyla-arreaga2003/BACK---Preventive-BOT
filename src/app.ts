@@ -11,17 +11,37 @@ import chatbotRoutes from "./routes/chatbot.routes.js";
 import maintenanceRoutes from "./routes/maintenance.routes.js";
 import settingsRoutes from "./routes/settings.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
+import profileRoutes from "./routes/profile.routes.js";
+import reminderRoutes from "./routes/reminder.routes.js";
 import { processPendingReminders } from "./services/reminder.service.js";
 import { generateScheduledNotifications } from "./services/notification.service.js";
 import { closeExpiredMaintenanceAppointments } from "./services/maintenance-appointment.service.js";
 
 const app = express();
+
+function isPrivateNetworkHostname(hostname: string): boolean {
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") return true;
+
+  const parts = hostname.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+
+  return parts[0] === 10
+    || (parts[0] === 172 && parts[1] !== undefined && parts[1] >= 16 && parts[1] <= 31)
+    || (parts[0] === 192 && parts[1] === 168);
+}
+
 app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5177"
-  ]
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (env.CORS_ORIGINS.includes(origin)) return callback(null, true);
+
+    try {
+      const url = new URL(origin);
+      return callback(null, url.protocol === "http:" && isPrivateNetworkHostname(url.hostname));
+    } catch {
+      return callback(null, false);
+    }
+  },
 }));
 
 app.use(express.json());
@@ -34,6 +54,8 @@ app.use("/api/chatbot", chatbotRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/profile", profileRoutes);
+app.use("/api/reminders", reminderRoutes);
 
 if (env.REMINDER_WORKER_ENABLED) {
   setInterval(
@@ -44,7 +66,7 @@ if (env.REMINDER_WORKER_ENABLED) {
     closeExpiredMaintenanceAppointments()
       .catch((error: unknown) => console.error("Error cerrando citas vencidas", error))
       .then(generateScheduledNotifications);
-  }, 5 * 60_000);
+  }, 60_000);
 }
 
 app.get("/", (_req, res) => {
@@ -71,8 +93,8 @@ async function startApplication(): Promise<void> {
   }
 
   await testDatabase();
-  app.listen(env.PORT, () => {
-    console.log(`Servidor ejecutándose en el puerto ${env.PORT}`);
+  app.listen(env.PORT, env.HOST, () => {
+    console.log(`Servidor ejecutándose en ${env.HOST}:${env.PORT}`);
   });
 }
 

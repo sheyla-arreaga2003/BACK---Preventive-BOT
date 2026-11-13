@@ -10,6 +10,7 @@ export interface ModulePreference { id: string; visible: boolean; }
 export interface UserProfileRow extends RowDataPacket {
   USId: number; USName: string; USLastName: string; USEmail: string;
   USPhone: string | null; ROIdRol: number | null; ROName: string | null;
+  USFregister: Date | string | null; USLastLoginAt: Date | string | null;
 }
 export interface UserPasswordRow extends RowDataPacket { USPassword: string; }
 export interface EmailCountRow extends RowDataPacket { total: number; }
@@ -29,7 +30,7 @@ export interface PreferenceWriteInput {
 export interface SettingsRepository {
   getProfile(userId: number): Promise<UserProfileRow | null>;
   isEmailUsedByAnotherUser(userId: number, email: string): Promise<boolean>;
-  updateProfile(userId: number, name: string, email: string): Promise<void>;
+  updateProfile(userId: number, name: string, lastName: string, email: string, phone: string | null): Promise<void>;
   getPasswordHash(userId: number): Promise<string | null>;
   updatePasswordHash(userId: number, passwordHash: string): Promise<void>;
   getPreferences(userId: number): Promise<UserPreferenceRow | null>;

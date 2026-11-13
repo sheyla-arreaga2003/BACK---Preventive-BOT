@@ -1,5 +1,6 @@
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import pool from "../config/database.js";
+import { recordAdminActivity } from "./activity.service.js";
 
 interface CountRow extends RowDataPacket { total: number }
 interface MotorcycleRow extends RowDataPacket {
@@ -33,6 +34,8 @@ export interface MaintenanceSummary {
 export interface MaintenanceServiceOption { id: number; name: string; description: string }
 export interface CreateMaintenanceInput {
   motorcycleId: number;
+  agencyId: number;
+  scheduleId: number;
   userId: number;
   date: string;
   mileage: string | null;
@@ -99,9 +102,12 @@ export async function createMaintenance(input: CreateMaintenanceInput): Promise<
 
     const [result] = await connection.execute<ResultSetHeader>(`
       INSERT INTO MAINTENANCE
-        (MOIdMoto, USId, MADate, MAMiles, MAObservations, MANextMiles, MANextDate)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [input.motorcycleId, input.userId, input.date, input.mileage, input.observations, input.nextMileage, input.nextDate]);
+        (MOIdMoto, MAIdAgencie, MAIdSchedule, USId, MADate, MAMiles, MAObservations, MANextMiles, MANextDate)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      input.motorcycleId, input.agencyId, input.scheduleId, input.userId, input.date,
+      input.mileage, input.observations, input.nextMileage, input.nextDate,
+    ]);
 
     for (const serviceId of input.serviceIds) {
       await connection.execute(
@@ -109,6 +115,7 @@ export async function createMaintenance(input: CreateMaintenanceInput): Promise<
         [result.insertId, serviceId, ""],
       );
     }
+    await recordAdminActivity(connection, input.userId, "MAINTENANCE_CREATED", "MAINTENANCE", result.insertId);
     await connection.commit();
     return { id: result.insertId };
   } catch (error: unknown) {

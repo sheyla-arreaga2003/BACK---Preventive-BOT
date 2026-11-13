@@ -14,7 +14,12 @@ export const env = Object.freeze({
   OPENAI_MODEL: requireEnvironmentVariable("OPENAI_MODEL"),
   REDIS_URL: process.env.REDIS_URL?.trim() || "redis://localhost:6379",
   REDIS_KEY_PREFIX: process.env.REDIS_KEY_PREFIX?.trim() || "",
+  HOST: process.env.HOST?.trim() || "0.0.0.0",
   PORT: Number(process.env.PORT) || 3000,
+  CORS_ORIGINS: (process.env.CORS_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   CHATBOT_RAG_ENABLED: process.env.CHATBOT_RAG_ENABLED?.trim().toLowerCase() === "true",
   CHATBOT_DOCUMENT_INDEX_PATH: process.env.CHATBOT_DOCUMENT_INDEX_PATH?.trim() || "var/chatbot-documents/index.json",
   REMINDER_WORKER_ENABLED: process.env.REMINDER_WORKER_ENABLED?.trim().toLowerCase() !== "false",

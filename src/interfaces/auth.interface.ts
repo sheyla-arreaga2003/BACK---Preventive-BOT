@@ -14,6 +14,10 @@ export interface LoginSuccess {
 export interface SessionData {
   userId: number;
   email: string;
+  publicId?: string;
+  createdAt?: string;
+  lastActivityAt?: string;
+  userAgent?: string;
 }
 
 export interface TokenSuccess {

@@ -102,6 +102,8 @@ router.post("/", async (req, res) => {
     if (typeof body !== "object" || body === null) return res.status(400).json({ message: "Revisa los datos del mantenimiento" });
     const value = body as Record<string, unknown>;
     const motorcycleId = typeof value.motorcycleId === "number" ? value.motorcycleId : Number.NaN;
+    const agencyId = typeof value.agencyId === "number" ? value.agencyId : Number.NaN;
+    const scheduleId = typeof value.scheduleId === "number" ? value.scheduleId : Number.NaN;
     const date = typeof value.date === "string" ? value.date.trim() : "";
     const text = (field: string, max: number): string | null => {
       const raw = value[field];
@@ -109,7 +111,12 @@ router.post("/", async (req, res) => {
       if (typeof raw !== "string" || raw.trim().length > max) throw new TypeError("Invalid field");
       return raw.trim();
     };
-    if (!Number.isSafeInteger(motorcycleId) || motorcycleId <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    if (
+      !Number.isSafeInteger(motorcycleId) || motorcycleId <= 0
+      || !Number.isSafeInteger(agencyId) || agencyId <= 0
+      || !Number.isSafeInteger(scheduleId) || scheduleId <= 0
+      || !/^\d{4}-\d{2}-\d{2}$/.test(date)
+    ) {
       return res.status(400).json({ message: "Revisa los datos del mantenimiento" });
     }
     const parsedDate = new Date(`${date}T00:00:00Z`);
@@ -123,6 +130,8 @@ router.post("/", async (req, res) => {
     const serviceIds = [...new Set(rawServices.map(Number))];
     const created = await createMaintenance({
       motorcycleId,
+      agencyId,
+      scheduleId,
       userId: req.auth.user.id,
       date,
       mileage: text("mileage", 50),

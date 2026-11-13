@@ -1,10 +1,10 @@
 import { Router, type Router as ExpressRouter } from "express";
 import { getClientByNit, getClients, patchClient, getMotorcyclesByCustomerId, addClient } from "../services/database.service.js";
-import { authMiddleware } from "../middlewares/auth.middleware.js";
+import { authMiddleware, authorizeRoles } from "../middlewares/auth.middleware.js";
 
 const router: ExpressRouter = Router();
 
-router.use(authMiddleware);
+router.use(authMiddleware, authorizeRoles(1));
 
 router.get("/", async (req, res) => {
     const { page, pageSize } = req.query;
@@ -65,7 +65,7 @@ router.post("/", async (req, res) => {
 
     if (existingClient && existingClient.length > 0) return res.status(400).json({ message: "Cliente con este NIT ya existe" });
 
-    const result = await addClient(CUName, CULastName, CUDPI, CUPhone, CUMail, CUAddress, Number(CUState), CUNIT);
+    const result = await addClient(CUName, CULastName, CUDPI, CUPhone, CUMail, CUAddress, Number(CUState), CUNIT, req.auth!.user.id);
 
     res.status(201).json({ message: "Cliente agregado correctamente", CUIdCustomer: result.insertId });
   } catch (error: unknown) {
@@ -92,7 +92,7 @@ router.patch("/:nit", async (req, res) => {
 
       if (cliente && cliente.length > 0) {
         
-        await patchClient(nit, CUName, CULastName, CUPhone, CUMail, CUAddress, Number(CUState));
+        await patchClient(nit, CUName, CULastName, CUPhone, CUMail, CUAddress, Number(CUState), req.auth!.user.id, cliente[0].CUIdCustomer);
 
         res.json({ message: "Cliente actualizado correctamente" });
       } else {

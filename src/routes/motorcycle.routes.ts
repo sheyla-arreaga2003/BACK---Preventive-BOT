@@ -1,6 +1,7 @@
 import { Router, type Router as ExpressRouter } from "express";
 import { executeDeclaraguate, executeVerificator } from "../services/declaraguate.service.js";
 import type { DeclaraguateData } from "../interfaces/capsolver.interface.js";
+import { authMiddleware, authorizeRoles } from "../middlewares/auth.middleware.js";
 import {
   addMotorcycle,
   getClientByNit,
@@ -11,6 +12,30 @@ import {
 } from "../services/database.service.js";
 
 const router: ExpressRouter = Router();
+
+router.post("/:motorcycleId/process", authMiddleware, authorizeRoles(1), async (req, res) => {
+  const motorcycleId = Number(req.params.motorcycleId);
+  const body: unknown = req.body;
+  if (!Number.isSafeInteger(motorcycleId) || motorcycleId <= 0 || typeof body !== "object" || body === null) {
+    return res.status(400).json({ message: "Revisa los datos del trámite" });
+  }
+  const value = body as Record<string, unknown>;
+  const stateId = typeof value.stateId === "number" ? value.stateId : Number.NaN;
+  const observations = typeof value.observations === "string" ? value.observations.trim() : "";
+  if (!Number.isSafeInteger(stateId) || stateId <= 0 || observations.length > 500) {
+    return res.status(400).json({ message: "Revisa los datos del trámite" });
+  }
+  try {
+    const result = await addProcess(motorcycleId, stateId, observations, req.auth!.user.id);
+    return res.status(201).json({ message: "Trámite actualizado correctamente", id: result.insertId });
+  } catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ER_NO_REFERENCED_ROW_2") {
+      return res.status(404).json({ message: "Motocicleta o estado no encontrado" });
+    }
+    console.error("Error actualizando el trámite", error);
+    return res.status(503).json({ message: "No fue posible actualizar el trámite" });
+  }
+});
 
 router.get("/plate/:plate", async (req, res) => {
   const { plate } = req.params;
@@ -54,7 +79,7 @@ router.get("/pendingPlates", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", authMiddleware, authorizeRoles(1), async (req, res) => {
   try {
     const {
       CUIdCustomer,
@@ -110,7 +135,7 @@ router.post("/", async (req, res) => {
 
       console.log("Result from Verificator:", resultVerificator);
 
-      const processResultVerificador = await addProcess(result.insertId, 1, resultVerificator.message);
+      const processResultVerificador = await addProcess(result.insertId, 1, resultVerificator.message, req.auth!.user.id);
 
       if (!resultVerificator.message.includes("Sí")) {
         return res.status(201).json({
@@ -125,7 +150,7 @@ router.post("/", async (req, res) => {
         data as DeclaraguateData
       );
 
-      const processResult = await addProcess(result.insertId, 2, resultDeclaraguate.message);
+      const processResult = await addProcess(result.insertId, 2, resultDeclaraguate.message, req.auth!.user.id);
 
       const observations = `Declaraguate executed successfully. Message: ${resultDeclaraguate.message}`;
 

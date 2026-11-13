@@ -1,7 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { getAuthenticatedUserById } from "../services/database.service.js";
 import type { AuthenticatedUserRow } from "../interfaces/database.interface.js";
-import { validateToken, type TokenResult } from "../services/auth.service.js";
+import { noteSessionActivity, validateToken, type TokenResult } from "../services/auth.service.js";
 
 export interface AuthIdentity {
   user: {
@@ -61,6 +61,7 @@ export function createAuthMiddleware(tokenValidator: TokenValidator, userLoader:
         session: { id: tokenResult.sessionid },
         role: { id: user.ROIdRol },
       };
+      void noteSessionActivity(tokenResult.sessionid, tokenResult.session).catch(() => undefined);
       return next();
     } catch {
       return res.status(503).json({ message: "Authentication service unavailable" });

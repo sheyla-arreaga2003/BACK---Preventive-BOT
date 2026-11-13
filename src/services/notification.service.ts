@@ -144,6 +144,7 @@ export async function notifyAppointmentEvent(
     JOIN AGENCIES AG ON AG.AGIdAgencie = MAP.MAIdAgencie
     JOIN SCHEDULES SC ON SC.SCIdSchedule = MAP.MAIdSchedule
     WHERE NS.NSType = ? AND NS.NSEnabled = 1
+    ON DUPLICATE KEY UPDATE NOIdNotification = NOIdNotification
   `, [label[0], label[1], appointmentId, type]);
 }
 
@@ -160,7 +161,8 @@ const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = 
       JOIN MAINTENANCE MA ON MA.MAMaintenance = (SELECT MAX(M2.MAMaintenance) FROM MAINTENANCE M2 WHERE M2.MOIdMoto = MA.MOIdMoto)
       JOIN MOTORCYCLES MO ON MO.MOIdMoto = MA.MOIdMoto
       WHERE NS.NSType = 'MAINTENANCE_UPCOMING' AND NS.NSEnabled = 1
-        AND STR_TO_DATE(MA.MANextDate, '%Y-%m-%d') BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL COALESCE(NS.NSLeadDays, 0) DAY)`,
+        AND STR_TO_DATE(MA.MANextDate, '%Y-%m-%d') BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL COALESCE(NS.NSLeadDays, 0) DAY)
+      ON DUPLICATE KEY UPDATE NOIdNotification = NOIdNotification`,
   },
   {
     type: NotificationType.MAINTENANCE_OVERDUE,
@@ -174,7 +176,8 @@ const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = 
       JOIN MAINTENANCE MA ON MA.MAMaintenance = (SELECT MAX(M2.MAMaintenance) FROM MAINTENANCE M2 WHERE M2.MOIdMoto = MA.MOIdMoto)
       JOIN MOTORCYCLES MO ON MO.MOIdMoto = MA.MOIdMoto
       WHERE NS.NSType = 'MAINTENANCE_OVERDUE' AND NS.NSEnabled = 1
-        AND STR_TO_DATE(MA.MANextDate, '%Y-%m-%d') < DATE_SUB(CURDATE(), INTERVAL COALESCE(NS.NSLeadDays, 0) DAY)`,
+        AND STR_TO_DATE(MA.MANextDate, '%Y-%m-%d') < DATE_SUB(CURDATE(), INTERVAL COALESCE(NS.NSLeadDays, 0) DAY)
+      ON DUPLICATE KEY UPDATE NOIdNotification = NOIdNotification`,
   },
   {
     type: NotificationType.PLATE_READY,
@@ -190,7 +193,8 @@ const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = 
       JOIN MOTORCYCLES MO ON MO.MOIdMoto = P.MOIdMoto
       WHERE NS.NSType = 'PLATE_READY' AND NS.NSEnabled = 1
         AND SP.STState = 'Placas recibidas en Mototec'
-        AND (MO.MOPlate IS NULL OR TRIM(MO.MOPlate) = '')`,
+        AND (MO.MOPlate IS NULL OR TRIM(MO.MOPlate) = '')
+      ON DUPLICATE KEY UPDATE NOIdNotification = NOIdNotification`,
   },
   {
     type: NotificationType.PROCEDURE_STALLED,
@@ -206,7 +210,8 @@ const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = 
       JOIN MOTORCYCLES MO ON MO.MOIdMoto = P.MOIdMoto
       WHERE NS.NSType = 'PROCEDURE_STALLED' AND NS.NSEnabled = 1
         AND SP.STState <> 'Placas recibidas en Mototec'
-        AND STR_TO_DATE(P.PRDateUpdate, '%Y-%m-%d') <= DATE_SUB(CURDATE(), INTERVAL COALESCE(NS.NSLeadDays, 0) DAY)`,
+        AND STR_TO_DATE(P.PRDateUpdate, '%Y-%m-%d') <= DATE_SUB(CURDATE(), INTERVAL COALESCE(NS.NSLeadDays, 0) DAY)
+      ON DUPLICATE KEY UPDATE NOIdNotification = NOIdNotification`,
   },
   {
     type: NotificationType.EMAIL_FAILED,
@@ -217,7 +222,8 @@ const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = 
              'REMINDER', R.REIdReminder, CONCAT(NS.NSType, ':', R.REIdReminder)
       FROM NOTIFICATION_SETTING NS
       JOIN REMINDER R ON R.REState = 3
-      WHERE NS.NSType = 'EMAIL_FAILED' AND NS.NSEnabled = 1`,
+      WHERE NS.NSType = 'EMAIL_FAILED' AND NS.NSEnabled = 1
+      ON DUPLICATE KEY UPDATE NOIdNotification = NOIdNotification`,
   },
 ];
 

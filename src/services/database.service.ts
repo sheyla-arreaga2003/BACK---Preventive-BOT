@@ -4,6 +4,7 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type * as Idb from "../interfaces/database.interface.js";
 import type { MaintenanceInvoiceMotorcycleRow, MaintenanceRecordRow, MaintenanceServiceRow, MaintenanceCountRow } from "../interfaces/maintenance.interface.js";
 import { getPlateTrackingByMotorcycle } from "./plate-tracking.service.js";
+import { recordAdminActivity } from "./activity.service.js";
 
 export type MotorcycleInvoiceProcessResult =
   | { status: "found"; data: Idb.MotorcycleInvoiceProcessData }
@@ -177,10 +178,21 @@ export async function getClients(page: number = 1,pageSize: number = 20): Promis
   };
 }
 
-export async function addProcess(idMotorcycle: number, idState: number, observations: string): Promise<ResultSetHeader> {
-  const query = `INSERT INTO PROCESSING (MOIdMoto, STIdState, PRObservations, PRFirstDate, PRDateUpdate) VALUES (?, ?, ?, CURDATE(), CURDATE())`;
-  const [result] = await pool.execute<ResultSetHeader>(query, [idMotorcycle, idState, observations]);
-  return result;
+export async function addProcess(idMotorcycle: number, idState: number, observations: string, actorUserId: number): Promise<ResultSetHeader> {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const query = `INSERT INTO PROCESSING (MOIdMoto, STIdState, PRObservations, PRFirstDate, PRDateUpdate) VALUES (?, ?, ?, CURDATE(), CURDATE())`;
+    const [result] = await connection.execute<ResultSetHeader>(query, [idMotorcycle, idState, observations]);
+    await recordAdminActivity(connection, actorUserId, "PLATE_PROCESS_UPDATED", "PROCESSING", result.insertId);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 export async function getUserByEmail(email: string): Promise<Idb.UserRow[]> {
@@ -248,8 +260,8 @@ export async function getMotorcycleByInvoice(
   return rows;
 }
 
-export async function updateUltimateLoginDate(userId: number): Promise<void> {
-  const query = `UPDATE USERS SET USFregister = NOW() WHERE USId = ?`;
+export async function updateLastLoginDate(userId: number): Promise<void> {
+  const query = `UPDATE USERS SET USLastLoginAt = UTC_TIMESTAMP(3) WHERE USId = ?`;
   await pool.execute(query, [userId]);
 }
 
@@ -260,15 +272,37 @@ export async function addUser(name: string, roleId: number, lastname: string, em
 }
 
 
-export async function addClient(CUName: string, CULastName: string, CUDPI: string, CUPhone: string, CUMail: string, CUAddress: string, CUState: number, CUNIT: string): Promise<ResultSetHeader> {
-  const query = `INSERT INTO CUSTOMER (CUName, CULastname, CUDPI, CUPhone, CUmail, CUAddress, CUState, CUNIT) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-  const [result] = await pool.execute<ResultSetHeader>(query, [CUName, CULastName, CUDPI, CUPhone, CUMail, CUAddress, CUState, CUNIT]);
-  return result;
+export async function addClient(CUName: string, CULastName: string, CUDPI: string, CUPhone: string, CUMail: string, CUAddress: string, CUState: number, CUNIT: string, actorUserId: number): Promise<ResultSetHeader> {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const query = `INSERT INTO CUSTOMER (CUName, CULastname, CUDPI, CUPhone, CUmail, CUAddress, CUState, CUNIT) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+    const [result] = await connection.execute<ResultSetHeader>(query, [CUName, CULastName, CUDPI, CUPhone, CUMail, CUAddress, CUState, CUNIT]);
+    await recordAdminActivity(connection, actorUserId, "CLIENT_CREATED", "CUSTOMER", result.insertId);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
-export async function patchClient(nit: string, CUName: string, CULastName: string, CUPhone: string, CUMail: string, CUAddress: string, CUState: number): Promise<void> {
-  const query = `UPDATE CUSTOMER SET CUName = ?, CULastName = ?, CUPhone = ?, CUMail = ?, CUAddress = ?, CUState = ? WHERE CUNIT = ?`;
-  await pool.execute(query, [CUName, CULastName, CUPhone, CUMail, CUAddress, CUState, nit]);
+export async function patchClient(nit: string, CUName: string, CULastName: string, CUPhone: string, CUMail: string, CUAddress: string, CUState: number, actorUserId: number, customerId: number): Promise<void> {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const query = `UPDATE CUSTOMER SET CUName = ?, CULastName = ?, CUPhone = ?, CUMail = ?, CUAddress = ?, CUState = ? WHERE CUNIT = ?`;
+    await connection.execute(query, [CUName, CULastName, CUPhone, CUMail, CUAddress, CUState, nit]);
+    await recordAdminActivity(connection, actorUserId, "CLIENT_UPDATED", "CUSTOMER", customerId);
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 export async function getAgencies(): Promise<any> {
@@ -352,6 +386,8 @@ export async function addMaintenance(
         [result.insertId, serviceId, ""],
       );
     }
+
+    await recordAdminActivity(connection, idUser, "MAINTENANCE_CREATED", "MAINTENANCE", result.insertId);
 
     const selectQuery = `SELECT MA.MAMaintenance, CONCAT(CU.CUName, ' ', CU.CULastName) AS ClientName, CU.CUMail Mail, MA.MADate, SC.SCTime MATime, MO.MOModel Model, MO.MOPlate Plate, AG.AGName Agency FROM maintenance MA
                         INNER JOIN agencies AG ON AG.AGIdAgencie = MA.MAIdAgencie
@@ -473,6 +509,7 @@ export async function markReminderFailed(reminderId: number, error: unknown): Pr
   const message = (error instanceof Error ? error.message : String(error)).slice(0, 250);
   const query = `UPDATE reminder
         SET REState = IF(RETries + 1 >= ?, 3, REState),
+            REAttemptedAt = NOW(),
             REError = ?,
             RETries = RETries + 1
         WHERE REIdReminder = ?`;
@@ -480,6 +517,10 @@ export async function markReminderFailed(reminderId: number, error: unknown): Pr
 }
 
 export async function updateReminderState(reminderId: number, newState: number): Promise<void> {
-  const query = `UPDATE reminder SET REState = ?, RESentAt = NOW() WHERE REIdReminder = ?`;
-  await pool.execute(query, [newState, reminderId]);
+  const query = `UPDATE reminder SET REState = ?, REAttemptedAt = NOW(), RESentAt = IF(? = 2, NOW(), RESentAt), REError = NULL WHERE REIdReminder = ?`;
+  await pool.execute(query, [newState, newState, reminderId]);
+}
+
+export async function updateReminderSubject(reminderId: number, subject: string): Promise<void> {
+  await pool.execute(`UPDATE reminder SET RETitle = ? WHERE REIdReminder = ?`, [subject, reminderId]);
 }

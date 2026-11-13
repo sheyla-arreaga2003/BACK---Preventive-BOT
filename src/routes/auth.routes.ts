@@ -22,7 +22,7 @@ router.post("/login", async (req: Request<Record<string, never>, unknown, LoginB
     try{
         const { email, password } = req.body;
 
-        const validated = await validateLogin(email, password);
+        const validated = await validateLogin(email, password, req.get("user-agent") ?? "");
 
         if (!validated || !validated.success) {
             if (validated?.reason === "database_unavailable" || validated?.reason === "session_store_unavailable") {

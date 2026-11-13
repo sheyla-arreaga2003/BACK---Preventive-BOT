@@ -3,8 +3,10 @@ import {
   getAgencies,
   getScheduleByAgencyId,
   addMaintenance,
+  markReminderFailed,
+  updateReminderState,
 } from "../services/database.service.js";
-import { testEmails, sendReminderEmail, generateReminder } from "../services/reminder.service.js";
+import { testEmails, sendReminderEmail, generateReminder, getReminderSubject } from "../services/reminder.service.js";
 import { ReminderType, ReminderState } from "../enums/reminder.enum.js";
 import { authMiddleware, authorizeRoles } from "../middlewares/auth.middleware.js";
 
@@ -77,7 +79,7 @@ router.post("/maintenance", async (req, res) => {
       REFSend: 'EMAIL',
       RESentAt: '',
       REDescription: 'Recordatorio de mantenimiento creado',
-      RETitle: 'Recordatorio de mantenimiento creado',
+      RETitle: getReminderSubject(ReminderType.SERVICE_CREATED),
     },
     {
       MAMaintenance: createdMaintenance.MAMaintenance,
@@ -87,7 +89,7 @@ router.post("/maintenance", async (req, res) => {
       REFSend: 'EMAIL',
       RESentAt: '',
       REDescription: 'Recordatorio de mantenimiento para mañana',
-      RETitle: 'Recordatorio de mantenimiento para mañana',
+      RETitle: getReminderSubject(ReminderType.SERVICE_TOMORROW),
     },
     {
       MAMaintenance: createdMaintenance.MAMaintenance,
@@ -97,18 +99,24 @@ router.post("/maintenance", async (req, res) => {
       REFSend: 'EMAIL',
       RESentAt: '',
       REDescription: 'Recordatorio de mantenimiento para hoy',
-      RETitle: 'Recordatorio de mantenimiento para hoy',
+      RETitle: getReminderSubject(ReminderType.SERVICE_TODAY),
     }]
 
-    await generateReminder(reminderData[0]);
+    const immediateReminder = await generateReminder(reminderData[0]) as { insertId?: number };
     await generateReminder(reminderData[1]);
     await generateReminder(reminderData[2]);
 
     let notificationSent = true;
     try {
       await sendReminderEmail(createdMaintenance, ReminderType.SERVICE_CREATED);
-    } catch {
+      if (immediateReminder.insertId) {
+        await updateReminderState(immediateReminder.insertId, ReminderState.SENT);
+      }
+    } catch (error: unknown) {
       notificationSent = false;
+      if (immediateReminder.insertId) {
+        await markReminderFailed(immediateReminder.insertId, error).catch(() => undefined);
+      }
       console.warn(
         `No se pudo enviar la notificación del mantenimiento ${createdMaintenance.MAMaintenance}`,
       );

@@ -10,7 +10,8 @@ import {
 function repository(overrides: Partial<SettingsRepository> = {}): SettingsRepository {
   const profile = {
     USId: 7, USName: "Shey", USLastName: "Arreaga", USEmail: "shey@example.com",
-    USPhone: null, ROIdRol: 1, ROName: "Administrador",
+    USPhone: null, USFregister: "2026-01-10", USLastLoginAt: null,
+    ROIdRol: 1, ROName: "Administrador",
   } as UserProfileRow;
   return {
     async getProfile(userId) { return userId === 7 ? profile : null; },
@@ -89,12 +90,14 @@ test("password change validates the current password and stores only a hash", as
 });
 
 test("profile updates preserve omitted fields and reject a duplicated login email", async () => {
-  let saved: { userId: number; name: string; email: string } | null = null;
+  let saved: { userId: number; name: string; lastName: string; email: string; phone: string | null } | null = null;
   const service = createSettingsService(repository({
-    async updateProfile(userId, name, email) { saved = { userId, name, email }; },
+    async updateProfile(userId, name, lastName, email, phone) { saved = { userId, name, lastName, email, phone }; },
   }));
   await service.updateProfile(7, { name: "Sheyla" });
-  assert.deepEqual(saved, { userId: 7, name: "Sheyla", email: "shey@example.com" });
+  assert.deepEqual(saved, {
+    userId: 7, name: "Sheyla", lastName: "Arreaga", email: "shey@example.com", phone: null,
+  });
 
   const duplicateService = createSettingsService(repository({ async isEmailUsedByAnotherUser() { return true; } }));
   await assert.rejects(duplicateService.updateProfile(7, { email: "other@example.com" }), SettingsConflictError);
