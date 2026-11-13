@@ -2,6 +2,7 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import pool from "../config/database.js";
 import { ReminderState, ReminderType } from "../enums/reminder.enum.js";
 import { sendCustomReminderEmail } from "./reminder.service.js";
+import { sanitizeMailErrorDetail } from "./mail-error.service.js";
 
 export type ReminderDelivery = "now" | "scheduled";
 
@@ -82,7 +83,13 @@ export async function createPersonalReminder(input: CreatePersonalReminderInput)
       [ReminderState.SENT, reminderId, ReminderState.PROCESSING]);
     return { id: reminderId, status: "SENT", duplicate: false };
   } catch (error) {
-    const message = (error instanceof Error ? error.message : String(error)).slice(0, 250);
+    const message = sanitizeMailErrorDetail(error);
+    console.error("Error SMTP enviando recordatorio personalizado", {
+      reminderId,
+      code: typeof error === "object" && error !== null && "code" in error ? error.code : undefined,
+      responseCode: typeof error === "object" && error !== null && "responseCode" in error ? error.responseCode : undefined,
+      message,
+    });
     await pool.execute(`UPDATE REMINDER SET REState = ?, REAttemptedAt = NOW(), RETries = RETries + 1, REError = ? WHERE REIdReminder = ?`,
       [ReminderState.ERROR, message, reminderId]);
     throw Object.assign(new Error("No se pudo enviar el correo. El intento quedó registrado"), { status: 502, reminderId });

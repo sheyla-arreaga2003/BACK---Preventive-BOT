@@ -1,6 +1,7 @@
 import type { RowDataPacket } from "mysql2";
 import pool from "../config/database.js";
 import { ReminderState } from "../enums/reminder.enum.js";
+import { classifyMailError } from "./mail-error.service.js";
 
 export type ReminderHistoryStatus = "PENDING" | "SENT" | "ERROR";
 export type ReminderHistoryOrigin = "AUTOMATIC" | "MANUAL";
@@ -37,13 +38,6 @@ interface StatsRow extends RowDataPacket { pending: number; sent: number; error:
 
 const stateNumber = (status: ReminderHistoryStatus): number =>
   status === "SENT" ? ReminderState.SENT : status === "ERROR" ? ReminderState.ERROR : ReminderState.PENDING;
-
-function publicError(value: string | null): string | null {
-  if (!value) return null;
-  return value
-    .replace(/(password|token|secret|authorization)\s*[:=]\s*[^\s,;]+/gi, "$1=[protegido]")
-    .slice(0, 500);
-}
 
 function whereClause(filters: ReminderHistoryFilters): { sql: string; values: Array<string | number> } {
   const conditions = ["R.REFSend = 'EMAIL'"];
@@ -83,7 +77,7 @@ function mapRow(row: HistoryRow) {
     attemptedAt: row.attemptedAt,
     sentAt: row.sentAt,
     content: row.content,
-    error: publicError(row.error),
+    error: row.error ? classifyMailError(row.error) : null,
   };
 }
 

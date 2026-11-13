@@ -5,6 +5,7 @@ import type * as Idb from "../interfaces/database.interface.js";
 import type { MaintenanceInvoiceMotorcycleRow, MaintenanceRecordRow, MaintenanceServiceRow, MaintenanceCountRow } from "../interfaces/maintenance.interface.js";
 import { getPlateTrackingByMotorcycle } from "./plate-tracking.service.js";
 import { recordAdminActivity } from "./activity.service.js";
+import { sanitizeMailErrorDetail } from "./mail-error.service.js";
 
 export type MotorcycleInvoiceProcessResult =
   | { status: "found"; data: Idb.MotorcycleInvoiceProcessData }
@@ -506,7 +507,7 @@ const MAX_REMINDER_TRIES = 3;
 
 /** Registra el fallo; el recordatorio se reintenta hasta MAX_REMINDER_TRIES y luego queda en ERROR (3). */
 export async function markReminderFailed(reminderId: number, error: unknown): Promise<void> {
-  const message = (error instanceof Error ? error.message : String(error)).slice(0, 250);
+  const message = sanitizeMailErrorDetail(error);
   const query = `UPDATE reminder
         SET REState = IF(RETries + 1 >= ?, 3, REState),
             REAttemptedAt = NOW(),
