@@ -59,7 +59,7 @@ function whereClause(filters: ReminderHistoryFilters): { sql: string; values: Ar
 const joins = `
   FROM REMINDER R
   LEFT JOIN CUSTOMER C ON C.CUIdCustomer = R.CUIdCustomer
-  LEFT JOIN MAINTENANCE MA ON MA.MAMaintenance = R.MAMaintenance
+  LEFT JOIN maintenance MA ON MA.MAMaintenance = R.MAMaintenance
   LEFT JOIN MOTORCYCLES MO ON MO.MOIdMoto = MA.MOIdMoto
   LEFT JOIN CUSTOMER MC ON MC.CUIdCustomer = MO.CUIdCustomer
   LEFT JOIN USERS U ON U.USId = R.USId`;

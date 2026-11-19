@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import "../config/env.js";
+import { env } from "../config/env.js";
 
 export interface SendMailParams {
   to: string;
@@ -61,11 +61,19 @@ function getTransporter(): MailTransport {
 }
 
 export async function sendMail({ to, subject, html }: SendMailParams): Promise<void> {
+  if (!env.MAIL_DELIVERY_ENABLED) {
+    throw new Error("La entrega de correo está deshabilitada en este entorno");
+  }
+
   const configuration = getGmailConfiguration();
   await getTransporter().sendMail({ from: configuration.from, to, subject, html });
 }
 
 export async function verifyMailConnection(): Promise<void> {
+  if (!env.MAIL_DELIVERY_ENABLED) {
+    throw new Error("La entrega de correo está deshabilitada en este entorno");
+  }
+
   await getTransporter().verify();
   console.log("Servidor de correo Gmail conectado");
 }

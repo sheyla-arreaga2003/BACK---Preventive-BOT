@@ -1,4 +1,4 @@
-import { Router, type Request, type Router as ExpressRouter } from "express";
+import { Router, type NextFunction, type Request, type Response, type Router as ExpressRouter } from "express";
 import crypto from "node:crypto";
 import OpenAI from "openai";
 import { authMiddleware, authorizeRoles } from "../middlewares/auth.middleware.js";
@@ -17,6 +17,7 @@ import {
 } from "../services/chatbot-session.service.js";
 import { rateLimitStore } from "../services/rate-limit.service.js";
 import { redisKey } from "../config/redis.js";
+import { env } from "../config/env.js";
 import { chatbotConversationStore, type ChatbotConversationScope } from "../services/chatbot-conversation.service.js";
 import type { AdminChatTarget, ChatHistoryMessage } from "../interfaces/chatbot.interface.js";
 import {
@@ -33,6 +34,15 @@ const INVOICE_ATTEMPT_LIMIT = 5;
 const INVOICE_ATTEMPT_WINDOW_SECONDS = 15 * 60;
 const CHAT_REQUEST_LIMIT = 20;
 const CHAT_REQUEST_WINDOW_SECONDS = 60;
+const CHATBOT_DISABLED_MESSAGE = "El chatbot no está disponible en este entorno";
+
+function requireChatbotEnabled(_req: Request, res: Response, next: NextFunction): void {
+  if (!env.CHATBOT_ENABLED) {
+    res.status(503).json({ message: CHATBOT_DISABLED_MESSAGE });
+    return;
+  }
+  next();
+}
 
 function positiveId(value: unknown): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) throw new TypeError("Invalid id");
@@ -272,7 +282,7 @@ router.post("/client/maintenance/appointments", clientChatMiddleware, async (req
   }
 });
 
-router.post("/client/chat", clientChatMiddleware, async (req, res) => {
+router.post("/client/chat", requireChatbotEnabled, clientChatMiddleware, async (req, res) => {
   try {
     const session = req.clientChatSession;
     if (!session) return res.status(401).json({ message: "Sesión de consulta inválida" });
@@ -313,7 +323,7 @@ router.post("/client/chat", clientChatMiddleware, async (req, res) => {
   }
 });
 
-router.post("/admin/chat", authMiddleware, authorizeRoles(ADMIN_ROLE_ID), async (req, res) => {
+router.post("/admin/chat", requireChatbotEnabled, authMiddleware, authorizeRoles(ADMIN_ROLE_ID), async (req, res) => {
   try {
     if (!req.auth) return res.status(401).json({ message: "Unauthorized" });
     const rate = await allowRequest(
@@ -369,7 +379,7 @@ router.post("/admin/chat", authMiddleware, authorizeRoles(ADMIN_ROLE_ID), async 
   }
 });
 
-router.delete("/admin/conversation/:conversationId", authMiddleware, authorizeRoles(ADMIN_ROLE_ID), async (req, res) => {
+router.delete("/admin/conversation/:conversationId", requireChatbotEnabled, authMiddleware, authorizeRoles(ADMIN_ROLE_ID), async (req, res) => {
   try {
     if (!req.auth) return res.status(401).json({ message: "Unauthorized" });
     const conversationId = parseConversationId(req.params.conversationId);

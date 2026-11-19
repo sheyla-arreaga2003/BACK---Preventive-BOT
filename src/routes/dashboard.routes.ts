@@ -11,6 +11,7 @@ import { ReminderType, ReminderState } from "../enums/reminder.enum.js";
 import { authMiddleware, authorizeRoles } from "../middlewares/auth.middleware.js";
 
 const router: ExpressRouter = Router();
+const ADMIN_ROLE_ID = 1;
 
 function isDuplicateMaintenanceSlot(error: unknown): boolean {
   return typeof error === "object"
@@ -18,6 +19,8 @@ function isDuplicateMaintenanceSlot(error: unknown): boolean {
     && "code" in error
     && error.code === "ER_DUP_ENTRY";
 }
+
+router.use(authMiddleware, authorizeRoles(ADMIN_ROLE_ID));
 
 router.get("/", async (req, res) => {
   try {
@@ -53,12 +56,11 @@ router.get("/schedule", async (req, res) => {
 
 router.post("/maintenance", async (req, res) => {
   try {
-    const { idMotorcycle, idAgency, idSchedule, idUser, date, miles, observations, serviceIds: rawServiceIds = [] } = req.body;
+    const { idMotorcycle, idAgency, idSchedule, date, miles, observations, serviceIds: rawServiceIds = [] } = req.body;
 
     if (!idMotorcycle) return res.status(400).json({ message: "idMotorcycle is required" });
     if (!idAgency) return res.status(400).json({ message: "idAgency is required" });
     if (!idSchedule) return res.status(400).json({ message: "idSchedule is required" });
-    if (!idUser) return res.status(401).json({ message: "Unauthorized" });
     if (!date) return res.status(400).json({ message: "date is required" });
     if (!miles) return res.status(400).json({ message: "miles is required" });
     if (!Array.isArray(rawServiceIds) || rawServiceIds.some((id) => !Number.isSafeInteger(id) || Number(id) <= 0)) {
@@ -66,7 +68,16 @@ router.post("/maintenance", async (req, res) => {
     }
     const serviceIds = [...new Set(rawServiceIds.map(Number))];
 
-    const maintenanceRecord = await addMaintenance(idMotorcycle, idAgency, idSchedule, idUser, date, miles, observations, serviceIds);
+    const maintenanceRecord = await addMaintenance(
+      idMotorcycle,
+      idAgency,
+      idSchedule,
+      req.auth!.user.id,
+      date,
+      miles,
+      observations,
+      serviceIds,
+    );
 
     const createdMaintenance = maintenanceRecord[0];
     if (!createdMaintenance) return res.status(500).json({ message: "No fue posible registrar el mantenimiento" });

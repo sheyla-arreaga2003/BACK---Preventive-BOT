@@ -1,6 +1,7 @@
 import { ReminderType, ReminderState } from '../enums/reminder.enum.js';
 import type { ReminderTemplateParams } from '../interfaces/reminder.interface.js';
-import { addReminder, getPendingReminders, getMailDataByMaintenanceId, markReminderFailed, updateReminderState, updateReminderSubject } from './database.service.js';
+import { addReminder, claimPendingReminders, getMailDataByMaintenanceId, markReminderFailed, releaseReminderClaim, updateReminderState, updateReminderSubject } from './database.service.js';
+import { DistributedLockLostError } from './distributed-lock.service.js';
 
 export function getReminderSubject(type: ReminderType): string {
     switch (type) {
@@ -135,15 +136,19 @@ export async function generateReminder(data: any) {
     return reminderId;
 }
 
-export async function processPendingReminders() {
-
-    const reminders: any = await getPendingReminders();
-
-    for (const reminder of reminders) {
+export async function processPendingReminders(assertOwnership?: () => Promise<void>) {
+    for (let processed = 0; processed < 50; processed += 1) {
+        await assertOwnership?.();
+        const reminders: any = await claimPendingReminders(1);
+        const reminder = reminders[0];
+        if (!reminder) break;
+        let deliveryStarted = false;
 
         try {
+            await assertOwnership?.();
 
             if (reminder.REType === ReminderType.CUSTOM) {
+                deliveryStarted = true;
                 await sendCustomReminderEmail({
                     to: reminder.RERecipient,
                     subject: reminder.RETitle,
@@ -154,12 +159,19 @@ export async function processPendingReminders() {
                 if (!mailData[0]) throw new Error('No se encontraron datos del mantenimiento');
                 const reminderType = reminder.REType as ReminderType;
                 await updateReminderSubject(reminder.REIdReminder, getReminderSubject(reminderType));
+                deliveryStarted = true;
                 await sendReminderEmail(mailData[0], reminderType);
             }
 
+            await assertOwnership?.();
             await updateReminderState(reminder.REIdReminder, ReminderState.SENT);
 
         } catch (error) {
+
+            if (error instanceof DistributedLockLostError) {
+                if (!deliveryStarted) await releaseReminderClaim(reminder.REIdReminder);
+                throw error;
+            }
 
             console.error(
                 `Error enviando reminder ${reminder.REIdReminder}`,

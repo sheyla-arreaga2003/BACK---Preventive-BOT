@@ -2,7 +2,8 @@ import crypto from "crypto";
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import { redisClient, redisKey } from "../config/redis.js";
 import { env } from "../config/env.js";
-import { addUser, getUserByEmail, updateLastLoginDate } from "./database.service.js";
+import { addUser, getUserByEmail, updateLastLoginDate, updateUserPasswordHash } from "./database.service.js";
+import { hashPassword, verifyPassword } from "./password.service.js";
 import type { UserRow } from "../interfaces/database.interface.js";
 import type * as IAuth from "../interfaces/auth.interface.js";
 
@@ -36,6 +37,7 @@ interface LoginRedis {
 
 interface LoginDependencies {
   getUsersByEmail(email: string): Promise<UserRow[]>;
+  updatePasswordHash(userId: number, passwordHash: string): Promise<void>;
   updateLastLogin(userId: number): Promise<void>;
   redis: LoginRedis;
   jwtSecret: string;
@@ -145,8 +147,16 @@ export function createLoginValidator(dependencies: LoginDependencies) {
 
     const user = users[0];
     if (!user) return { success: false, reason: "invalid_credentials" };
-    const inputPasswordHash = crypto.createHash("sha256").update(password).digest("hex");
-    if (user.USPassword !== inputPasswordHash) return { success: false, reason: "invalid_credentials" };
+    const passwordResult = await verifyPassword(user.USPassword, password);
+    if (!passwordResult.valid) return { success: false, reason: "invalid_credentials" };
+
+    if (passwordResult.needsUpgrade) {
+      try {
+        await dependencies.updatePasswordHash(user.USId, await hashPassword(password));
+      } catch {
+        return { success: false, reason: "database_unavailable" };
+      }
+    }
 
     const sessionid = dependencies.randomUUID();
     const expires = 60 * 60 * 4;
@@ -189,6 +199,7 @@ export function createLoginValidator(dependencies: LoginDependencies) {
 
 export const validateLogin = createLoginValidator({
   getUsersByEmail: getUserByEmail,
+  updatePasswordHash: updateUserPasswordHash,
   updateLastLogin: updateLastLoginDate,
   redis: redisClient,
   jwtSecret: env.JWT_SECRET,
@@ -281,7 +292,7 @@ export const revokeOtherUserSessions = adminSessionManager.revokeOthers;
 
 export const signup = async (name: string, roleId: number, lastname: string, email: string, phone: string, password: string): Promise<{ success: boolean }> => {
   try {
-    const storedPasswordHash = crypto.createHash("sha256").update(password).digest("hex");
+    const storedPasswordHash = await hashPassword(password);
     const created = await addUser(name, roleId, lastname, email, phone, storedPasswordHash);
     return { success: Boolean(created?.affectedRows) };
   } catch {

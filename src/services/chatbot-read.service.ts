@@ -133,13 +133,13 @@ export async function getMaintenancePageByMotorcycle(
 ): Promise<MaintenancePage> {
   requirePagination(page, pageSize);
   const [counts] = await pool.execute<CountRow[]>(
-    `SELECT COUNT(*) AS total FROM MAINTENANCE WHERE MOIdMoto = ?`, [motorcycleId],
+    `SELECT COUNT(*) AS total FROM maintenance WHERE MOIdMoto = ?`, [motorcycleId],
   );
   const total = counts[0]?.total ?? 0;
   const [maintenances] = await pool.query<MaintenanceRow[]>(`
     SELECT MAMaintenance, DATE_FORMAT(MADate, '%Y-%m-%d') AS MADate,
       MAMiles, MANextMiles, MANextDate
-    FROM MAINTENANCE
+    FROM maintenance
     WHERE MOIdMoto = ?
     ORDER BY MADate DESC, MAMaintenance DESC
     LIMIT ? OFFSET ?
@@ -184,7 +184,7 @@ export async function getNextMaintenanceByMotorcycle(motorcycleId: number): Prom
   const [rows] = await pool.execute<MaintenanceRow[]>(`
     SELECT MAMaintenance, DATE_FORMAT(MADate, '%Y-%m-%d') AS MADate,
       MAMiles, MANextMiles, MANextDate
-    FROM MAINTENANCE
+    FROM maintenance
     WHERE MOIdMoto = ? AND (MANextMiles IS NOT NULL OR MANextDate IS NOT NULL)
     ORDER BY MADate DESC, MAMaintenance DESC
     LIMIT 1
@@ -262,7 +262,7 @@ export async function getMaintenancePeriodSummary(startDate: string, endDate: st
 }> {
   const [rows] = await pool.execute<Array<RowDataPacket & { maintenanceCount: number; motorcycleCount: number }>>(`
     SELECT COUNT(*) AS maintenanceCount, COUNT(DISTINCT MOIdMoto) AS motorcycleCount
-    FROM MAINTENANCE
+    FROM maintenance
     WHERE MADate BETWEEN ? AND ?
   `, [startDate, endDate]);
   return { startDate, endDate, maintenanceCount: rows[0]?.maintenanceCount ?? 0, motorcycleCount: rows[0]?.motorcycleCount ?? 0 };

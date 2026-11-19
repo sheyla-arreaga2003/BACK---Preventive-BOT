@@ -36,13 +36,12 @@ class MemoryRedis implements ClientSessionRedis, RateLimitRedis, ConversationRed
   async set(key: string, value: string): Promise<string> { this.values.set(key, value); return "OK"; }
   async get(key: string): Promise<string | null> { return this.values.get(key) ?? null; }
   async del(key: string): Promise<number> { return this.values.delete(key) ? 1 : 0; }
-  async incr(key: string): Promise<number> {
+  async eval(_script: string, options: { keys: string[]; arguments: string[] }): Promise<[number, number]> {
+    const key = options.keys[0] ?? "";
     const next = (this.counts.get(key) ?? 0) + 1;
     this.counts.set(key, next);
-    return next;
+    return [next, Number(options.arguments[0] ?? 60)];
   }
-  async expire(): Promise<number> { return 1; }
-  async ttl(): Promise<number> { return 60; }
 }
 
 test("el estado conversacional queda aislado por sesión, conversación y destino y puede limpiarse", async () => {
@@ -146,7 +145,7 @@ test("el rate limit compartido rechaza solicitudes que exceden el límite", asyn
 test("los fallos de Redis se propagan y no conceden sesión ni omiten límites", async () => {
   const failing: MemoryRedis = new MemoryRedis();
   failing.get = async () => { throw new Error("simulated Redis failure"); };
-  failing.incr = async () => { throw new Error("simulated Redis failure"); };
+  failing.eval = async () => { throw new Error("simulated Redis failure"); };
   await assert.rejects(createClientSessionStore(failing).read("credential"), /simulated Redis failure/);
   await assert.rejects(createRateLimitStore(failing).consume("key", 1, 60), /simulated Redis failure/);
 });

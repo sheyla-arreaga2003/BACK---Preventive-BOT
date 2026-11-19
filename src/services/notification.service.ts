@@ -2,6 +2,7 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type { PoolConnection } from "mysql2/promise";
 import pool from "../config/database.js";
 import { NotificationType } from "../enums/notification.enum.js";
+import { DistributedLockLostError } from "./distributed-lock.service.js";
 
 export interface NotificationSetting {
   type: NotificationType;
@@ -141,8 +142,8 @@ export async function notifyAppointmentEvent(
     JOIN MAINTENANCE_APPOINTMENT MAP ON MAP.MAPIdAppointment = ?
     JOIN MOTORCYCLES MO ON MO.MOIdMoto = MAP.MOIdMoto
     LEFT JOIN CUSTOMER CU ON CU.CUIdCustomer = MO.CUIdCustomer
-    JOIN AGENCIES AG ON AG.AGIdAgencie = MAP.MAIdAgencie
-    JOIN SCHEDULES SC ON SC.SCIdSchedule = MAP.MAIdSchedule
+    JOIN agencies AG ON AG.AGIdAgencie = MAP.MAIdAgencie
+    JOIN schedules SC ON SC.SCIdSchedule = MAP.MAIdSchedule
     WHERE NS.NSType = ? AND NS.NSEnabled = 1
     ON DUPLICATE KEY UPDATE NOIdNotification = NOIdNotification
   `, [label[0], label[1], appointmentId, type]);
@@ -158,7 +159,7 @@ const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = 
                     ' tiene mantenimiento el ', DATE_FORMAT(STR_TO_DATE(MA.MANextDate, '%Y-%m-%d'), '%Y-%m-%d'), '.'),
              'MAINTENANCE', MA.MAMaintenance, CONCAT(NS.NSType, ':', MA.MAMaintenance)
       FROM NOTIFICATION_SETTING NS
-      JOIN MAINTENANCE MA ON MA.MAMaintenance = (SELECT MAX(M2.MAMaintenance) FROM MAINTENANCE M2 WHERE M2.MOIdMoto = MA.MOIdMoto)
+      JOIN maintenance MA ON MA.MAMaintenance = (SELECT MAX(M2.MAMaintenance) FROM maintenance M2 WHERE M2.MOIdMoto = MA.MOIdMoto)
       JOIN MOTORCYCLES MO ON MO.MOIdMoto = MA.MOIdMoto
       WHERE NS.NSType = 'MAINTENANCE_UPCOMING' AND NS.NSEnabled = 1
         AND STR_TO_DATE(MA.MANextDate, '%Y-%m-%d') BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL COALESCE(NS.NSLeadDays, 0) DAY)
@@ -173,7 +174,7 @@ const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = 
                     ' tenía mantenimiento el ', DATE_FORMAT(STR_TO_DATE(MA.MANextDate, '%Y-%m-%d'), '%Y-%m-%d'), '.'),
              'MAINTENANCE', MA.MAMaintenance, CONCAT(NS.NSType, ':', MA.MAMaintenance)
       FROM NOTIFICATION_SETTING NS
-      JOIN MAINTENANCE MA ON MA.MAMaintenance = (SELECT MAX(M2.MAMaintenance) FROM MAINTENANCE M2 WHERE M2.MOIdMoto = MA.MOIdMoto)
+      JOIN maintenance MA ON MA.MAMaintenance = (SELECT MAX(M2.MAMaintenance) FROM maintenance M2 WHERE M2.MOIdMoto = MA.MOIdMoto)
       JOIN MOTORCYCLES MO ON MO.MOIdMoto = MA.MOIdMoto
       WHERE NS.NSType = 'MAINTENANCE_OVERDUE' AND NS.NSEnabled = 1
         AND STR_TO_DATE(MA.MANextDate, '%Y-%m-%d') < DATE_SUB(CURDATE(), INTERVAL COALESCE(NS.NSLeadDays, 0) DAY)
@@ -227,11 +228,13 @@ const SCAN_STATEMENTS: ReadonlyArray<{ type: NotificationType; sql: string }> = 
   },
 ];
 
-export async function generateScheduledNotifications(): Promise<void> {
+export async function generateScheduledNotifications(assertOwnership?: () => Promise<void>): Promise<void> {
   for (const statement of SCAN_STATEMENTS) {
     try {
+      await assertOwnership?.();
       await pool.execute(statement.sql);
     } catch (error: unknown) {
+      if (error instanceof DistributedLockLostError) throw error;
       console.error(`Error generando avisos ${statement.type}`, error);
     }
   }

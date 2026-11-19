@@ -2,10 +2,13 @@
   "name": "Back-Preventive-Bot",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/server.js",
   "scripts": {
-    "dev": "tsx watch src/app.ts",
-    "start": "tsx src/app.ts",
+    "dev": "tsx watch src/server.ts",
+    "dev:worker": "tsx watch src/worker.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --enable-source-maps dist/server.js",
+    "start:worker": "node --enable-source-maps dist/worker.js",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/**/*.test.ts",
     "chatbot:index-documents": "tsx scripts/index-chatbot-documents.ts",
@@ -18,17 +21,16 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "^11.17.0",
-      "onFail": "download"
-    }
+  "packageManager": "pnpm@10.18.3",
+  "engines": {
+    "node": ">=22 <25",
+    "pnpm": ">=10.18.3 <11"
   },
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/client": "^2.1.0",
     "@modelcontextprotocol/server": "^2.1.0",
+    "@node-rs/argon2": "^2.2.2",
     "@playwright/test": "^1.62.1",
     "@types/jsonwebtoken": "^9.0.10",
     "cors": "^2.8.6",
@@ -46,6 +48,8 @@
     "@types/express": "^5.0.6",
     "@types/node": "^26.2.0",
     "@types/nodemailer": "^8.0.2",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.2",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   }

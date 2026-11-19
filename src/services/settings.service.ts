@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { ResultSetHeader } from "mysql2";
 import pool from "../config/database.js";
+import { hashPassword, verifyPassword } from "./password.service.js";
 import type {
   AccentPreference, BackgroundPreference, EmailCountRow, MediaKind, ModulePreference,
   PreferenceWriteInput, SettingsRepository, ThemePreference, UserMediaRow,
@@ -293,11 +294,9 @@ export function createSettingsService(repository: SettingsRepository = databaseR
     if (newPassword.length < 8 || newPassword.length > 128) throw new SettingsValidationError("New password must contain between 8 and 128 characters");
     const storedHash = await repository.getPasswordHash(userId);
     if (!storedHash) throw new SettingsNotFoundError("User not found");
-    const currentHash = crypto.createHash("sha256").update(currentPassword).digest("hex");
-    const storedBuffer = Buffer.from(storedHash, "utf8");
-    const inputBuffer = Buffer.from(currentHash, "utf8");
-    if (storedBuffer.length !== inputBuffer.length || !crypto.timingSafeEqual(storedBuffer, inputBuffer)) throw new SettingsAuthenticationError("Current password is incorrect");
-    await repository.updatePasswordHash(userId, crypto.createHash("sha256").update(newPassword).digest("hex"));
+    const passwordResult = await verifyPassword(storedHash, currentPassword);
+    if (!passwordResult.valid) throw new SettingsAuthenticationError("Current password is incorrect");
+    await repository.updatePasswordHash(userId, await hashPassword(newPassword));
   }
 
   async function preferences(userId: number, roleId: number | null) {

@@ -7,7 +7,7 @@ interface MotorcycleRow extends RowDataPacket {
   MOIdMoto: number;
   MOBrand: string;
   MOModel: string;
-  MOPlate: string;
+  MOPlate: string | null;
   CUIdCustomer: number | null;
   CUName: string | null;
   CULastName: string | null;
@@ -18,7 +18,7 @@ export interface MaintenanceMotorcycle {
   id: number;
   brand: string;
   model: string;
-  plate: string;
+  plate: string | null;
   customer: { id: number; name: string } | null;
 }
 
@@ -66,7 +66,7 @@ function mapMotorcycle(row: MotorcycleRow): MaintenanceMotorcycle {
 export async function getMaintenanceSummary(): Promise<MaintenanceSummary> {
   const [rows] = await pool.execute<CountRow[]>(`
     SELECT COUNT(*) AS total
-    FROM MAINTENANCE
+    FROM maintenance
   `);
   return { registeredMaintenance: rows[0]?.total ?? 0 };
 }
@@ -101,7 +101,7 @@ export async function createMaintenance(input: CreateMaintenanceInput): Promise<
     }
 
     const [result] = await connection.execute<ResultSetHeader>(`
-      INSERT INTO MAINTENANCE
+      INSERT INTO maintenance
         (MOIdMoto, MAIdAgencie, MAIdSchedule, USId, MADate, MAMiles, MAObservations, MANextMiles, MANextDate)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [

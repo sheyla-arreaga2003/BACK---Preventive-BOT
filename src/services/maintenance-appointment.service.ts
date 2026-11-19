@@ -2,6 +2,7 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import pool from "../config/database.js";
 import { NotificationType } from "../enums/notification.enum.js";
 import { notifyAppointmentEvent } from "./notification.service.js";
+import { DistributedLockLostError } from "./distributed-lock.service.js";
 
 interface AgencyRow extends RowDataPacket { id: number; name: string }
 interface ScheduleRow extends RowDataPacket { id: number; time: string }
@@ -71,7 +72,7 @@ export async function getAppointmentServices(): Promise<AppointmentRequestedServ
 export async function getAppointmentAgencies(): Promise<Array<{ id: number; name: string }>> {
   const [rows] = await pool.execute<AgencyRow[]>(`
     SELECT AGIdAgencie AS id, AGName AS name
-    FROM AGENCIES
+    FROM agencies
     WHERE AGActive = 1
     ORDER BY AGName
   `);
@@ -84,14 +85,14 @@ export async function getAvailableAppointmentSchedules(
 ): Promise<Array<{ id: number; time: string }>> {
   const [rows] = await pool.execute<ScheduleRow[]>(`
     SELECT SC.SCIdSchedule AS id, TIME_FORMAT(SC.SCTime, '%H:%i:%s') AS time
-    FROM SCHEDULES SC
+    FROM schedules SC
     WHERE SC.SCActive = 1
       AND EXISTS (
-        SELECT 1 FROM AGENCIES AG
+        SELECT 1 FROM agencies AG
         WHERE AG.AGIdAgencie = ? AND AG.AGActive = 1
       )
       AND NOT EXISTS (
-        SELECT 1 FROM MAINTENANCE MA
+        SELECT 1 FROM maintenance MA
         WHERE MA.MAIdAgencie = ?
           AND MA.MADate = ?
           AND MA.MAIdSchedule = SC.SCIdSchedule
@@ -123,8 +124,8 @@ export async function createClientMaintenanceAppointment(input: {
     const [valid] = await connection.execute<RowDataPacket[]>(`
       SELECT MO.MOIdMoto
       FROM MOTORCYCLES MO
-      JOIN AGENCIES AG ON AG.AGIdAgencie = ? AND AG.AGActive = 1
-      JOIN SCHEDULES SC ON SC.SCIdSchedule = ? AND SC.SCActive = 1
+      JOIN agencies AG ON AG.AGIdAgencie = ? AND AG.AGActive = 1
+      JOIN schedules SC ON SC.SCIdSchedule = ? AND SC.SCActive = 1
       WHERE MO.MOIdMoto = ?
       LIMIT 1
     `, [input.agencyId, input.scheduleId, input.motorcycleId]);
@@ -140,7 +141,7 @@ export async function createClientMaintenanceAppointment(input: {
 
     const [occupied] = await connection.execute<RowDataPacket[]>(`
       SELECT MAMaintenance
-      FROM MAINTENANCE
+      FROM maintenance
       WHERE MAIdAgencie = ? AND MADate = ? AND MAIdSchedule = ?
       LIMIT 1
       FOR UPDATE
@@ -203,19 +204,22 @@ export async function closeMaintenanceAppointment(id: number, status: Appointmen
 const NO_SHOW_GRACE_MINUTES = 60;
 
 /** Marca NO_ASISTIO (y avisa) las citas PROGRAMADO cuya hora pasó hace más de NO_SHOW_GRACE_MINUTES. */
-export async function closeExpiredMaintenanceAppointments(): Promise<number> {
+export async function closeExpiredMaintenanceAppointments(assertOwnership?: () => Promise<void>): Promise<number> {
+  await assertOwnership?.();
   const [rows] = await pool.execute<Array<RowDataPacket & { id: number }>>(`
     SELECT MAP.MAPIdAppointment AS id
     FROM MAINTENANCE_APPOINTMENT MAP
-    JOIN SCHEDULES SC ON SC.SCIdSchedule = MAP.MAIdSchedule
+    JOIN schedules SC ON SC.SCIdSchedule = MAP.MAIdSchedule
     WHERE MAP.MAPStatus = 'PROGRAMADO'
       AND TIMESTAMP(MAP.MAPDate, SC.SCTime) < DATE_SUB(NOW(), INTERVAL ${NO_SHOW_GRACE_MINUTES} MINUTE)
   `);
   let closed = 0;
   for (const { id } of rows) {
     try {
+      await assertOwnership?.();
       if (await closeMaintenanceAppointment(id, "NO_ASISTIO")) closed++;
     } catch (error: unknown) {
+      if (error instanceof DistributedLockLostError) throw error;
       console.error(`Error cerrando cita vencida ${id}`, error);
     }
   }
@@ -239,13 +243,13 @@ export async function rescheduleMaintenanceAppointment(id: number, date: string,
       return false;
     }
     const [validSchedule] = await connection.execute<RowDataPacket[]>(
-      `SELECT SCIdSchedule FROM SCHEDULES WHERE SCIdSchedule = ? AND SCActive = 1`,
+      `SELECT SCIdSchedule FROM schedules WHERE SCIdSchedule = ? AND SCActive = 1`,
       [scheduleId],
     );
     if (validSchedule.length === 0) throw new TypeError("Invalid appointment data");
     const [occupied] = await connection.execute<RowDataPacket[]>(`
       SELECT MAMaintenance
-      FROM MAINTENANCE
+      FROM maintenance
       WHERE MAIdAgencie = ? AND MADate = ? AND MAIdSchedule = ?
       LIMIT 1
       FOR UPDATE
@@ -287,8 +291,8 @@ const appointmentSelect = `
   FROM MAINTENANCE_APPOINTMENT MAP
   JOIN MOTORCYCLES MO ON MO.MOIdMoto = MAP.MOIdMoto
   LEFT JOIN CUSTOMER CU ON CU.CUIdCustomer = MO.CUIdCustomer
-  JOIN AGENCIES AG ON AG.AGIdAgencie = MAP.MAIdAgencie
-  JOIN SCHEDULES SC ON SC.SCIdSchedule = MAP.MAIdSchedule
+  JOIN agencies AG ON AG.AGIdAgencie = MAP.MAIdAgencie
+  JOIN schedules SC ON SC.SCIdSchedule = MAP.MAIdSchedule
 `;
 
 async function mapAppointmentsWithServices(rows: AppointmentRow[]): Promise<MaintenanceAppointment[]> {

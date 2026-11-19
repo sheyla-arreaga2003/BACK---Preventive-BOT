@@ -6,6 +6,7 @@ import {
   SettingsAuthenticationError, SettingsConflictError, SettingsValidationError, createSettingsService,
   detectImageMime, getDefaultPreferences, mergePreferences,
 } from "../src/services/settings.service.js";
+import { isArgon2idHash, verifyPassword } from "../src/services/password.service.js";
 
 function repository(overrides: Partial<SettingsRepository> = {}): SettingsRepository {
   const profile = {
@@ -82,7 +83,8 @@ test("password change validates the current password and stores only a hash", as
   let saved = "";
   const service = createSettingsService(repository({ async updatePasswordHash(_userId, hash) { saved = hash; } }));
   await service.changePassword(7, { currentPassword: "actual-segura", newPassword: "nueva-segura" });
-  assert.equal(saved, crypto.createHash("sha256").update("nueva-segura").digest("hex"));
+  assert.equal(isArgon2idHash(saved), true);
+  assert.equal((await verifyPassword(saved, "nueva-segura")).valid, true);
   await assert.rejects(
     service.changePassword(7, { currentPassword: "incorrecta", newPassword: "otra-segura" }),
     SettingsAuthenticationError,

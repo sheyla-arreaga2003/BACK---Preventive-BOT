@@ -144,7 +144,7 @@ export async function getReminderList(page: number, pageSize: number): Promise<P
   const [rows] = await pool.query<Array<RowDataPacket & { RETitle: string; REDescription: string; REDateProgram: string; REType: string; REState: number | null; REFSend: string; motorcycle: string | null }>>(`
     SELECT R.RETitle, R.REDescription, R.REDateProgram, R.REType, R.REState, R.REFSend,
       CASE WHEN MO.MOIdMoto IS NULL THEN NULL ELSE CONCAT(MO.MOBrand, ' ', MO.MOModel) END motorcycle
-    FROM REMINDER R LEFT JOIN MAINTENANCE MA ON MA.MAMaintenance = R.MAMaintenance
+    FROM REMINDER R LEFT JOIN maintenance MA ON MA.MAMaintenance = R.MAMaintenance
     LEFT JOIN MOTORCYCLES MO ON MO.MOIdMoto = MA.MOIdMoto
     ORDER BY R.REIdReminder DESC LIMIT ? OFFSET ?
   `, [pageSize, (page - 1) * pageSize]);

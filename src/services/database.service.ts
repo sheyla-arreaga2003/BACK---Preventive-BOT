@@ -1,11 +1,12 @@
 import pool from "../config/database.js";
-import { WITHOUT_REGISTERED_PLATE_SQL } from "./motorcycle-plate-status.service.js";
+import { normalizePlateForStorage, WITHOUT_REGISTERED_PLATE_SQL } from "./motorcycle-plate-status.service.js";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type * as Idb from "../interfaces/database.interface.js";
 import type { MaintenanceInvoiceMotorcycleRow, MaintenanceRecordRow, MaintenanceServiceRow, MaintenanceCountRow } from "../interfaces/maintenance.interface.js";
 import { getPlateTrackingByMotorcycle } from "./plate-tracking.service.js";
 import { recordAdminActivity } from "./activity.service.js";
 import { sanitizeMailErrorDetail } from "./mail-error.service.js";
+import { env } from "../config/env.js";
 
 export type MotorcycleInvoiceProcessResult =
   | { status: "found"; data: Idb.MotorcycleInvoiceProcessData }
@@ -98,7 +99,7 @@ export async function getMotorcycleWithLatestProcessByInvoice(
 
 export async function addMotorcycle (
   CUIdCustomer: string,
-  MOPlate: string,
+  MOPlate: string | null,
     MOBrand: string,
     MOModel: string,
     MOYear: string,
@@ -110,6 +111,7 @@ export async function addMotorcycle (
     MOSerieInvoice: string,
     MONumberInvoice: string
 ): Promise<ResultSetHeader> {
+  const normalizedPlate = normalizePlateForStorage(MOPlate);
   const query = `INSERT INTO MOTORCYCLES
       (
         CUIdCustomer,
@@ -128,7 +130,7 @@ export async function addMotorcycle (
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
   const [result] = await pool.execute<ResultSetHeader>(query, [
     CUIdCustomer,
-    MOPlate,
+    normalizedPlate,
     MOBrand,
     MOModel,
     MOYear,
@@ -266,6 +268,11 @@ export async function updateLastLoginDate(userId: number): Promise<void> {
   await pool.execute(query, [userId]);
 }
 
+export async function updateUserPasswordHash(userId: number, passwordHash: string): Promise<void> {
+  const query = `UPDATE USERS SET USPassword = ? WHERE USId = ?`;
+  await pool.execute(query, [passwordHash, userId]);
+}
+
 export async function addUser(name: string, roleId: number, lastname: string, email: string, phone: string, password: string): Promise<ResultSetHeader> {
   const query = `INSERT INTO USERS (USName, ROIdRol, USLastName, USEmail, USPhone, USPassword) VALUES (?, ?, ?, ?, ?, ?)`;
   const [result] = await pool.execute<ResultSetHeader>(query, [name, roleId, lastname, email, phone, password]);
@@ -307,7 +314,7 @@ export async function patchClient(nit: string, CUName: string, CULastName: strin
 }
 
 export async function getAgencies(): Promise<any> {
-  const query = `SELECT * FROM AGENCIES WHERE AGActive = 1`;
+  const query = `SELECT * FROM agencies WHERE AGActive = 1`;
   const [rows] = await pool.execute(query);
   return rows;
 }
@@ -393,8 +400,8 @@ export async function addMaintenance(
     const selectQuery = `SELECT MA.MAMaintenance, CONCAT(CU.CUName, ' ', CU.CULastName) AS ClientName, CU.CUMail Mail, MA.MADate, SC.SCTime MATime, MO.MOModel Model, MO.MOPlate Plate, AG.AGName Agency FROM maintenance MA
                         INNER JOIN agencies AG ON AG.AGIdAgencie = MA.MAIdAgencie
                         INNER JOIN schedules SC ON SC.SCIdSchedule = MA.MAIdSchedule
-                        INNER JOIN motorcycles MO ON MO.MOIdMoto = MA.MOIdMoto
-                        INNER JOIN customer CU ON CU.CUIdCustomer = MO.CUIdCustomer
+                        INNER JOIN MOTORCYCLES MO ON MO.MOIdMoto = MA.MOIdMoto
+                        INNER JOIN CUSTOMER CU ON CU.CUIdCustomer = MO.CUIdCustomer
                         WHERE MA.MAMaintenance = ?`;
     const [rows] = await connection.execute<CreatedMaintenanceRow[]>(selectQuery, [result.insertId]);
     await connection.commit();
@@ -412,8 +419,8 @@ export async function getMailDataByMaintenanceId(maintenanceId: number): Promise
   FROM maintenance MA
   INNER JOIN agencies AG ON AG.AGIdAgencie = MA.MAIdAgencie
   INNER JOIN schedules SC ON SC.SCIdSchedule = MA.MAIdSchedule
-  INNER JOIN motorcycles MO ON MO.MOIdMoto = MA.MOIdMoto
-  INNER JOIN customer CU ON CU.CUIdCustomer = MO.CUIdCustomer
+  INNER JOIN MOTORCYCLES MO ON MO.MOIdMoto = MA.MOIdMoto
+  INNER JOIN CUSTOMER CU ON CU.CUIdCustomer = MO.CUIdCustomer
   WHERE MA.MAMaintenance = ?`;
   const [rows] = await pool.execute(query, [maintenanceId]);
   return rows;
@@ -433,7 +440,7 @@ export async function findMotorcyclesByInvoice(serieInvoice: string, numberInvoi
 export async function countByMotorcycle(motorcycleId: number): Promise<number> {
   const query = `
     SELECT COUNT(*) AS total
-    FROM MAINTENANCE
+    FROM maintenance
     WHERE MOIdMoto = ?
   `;
   const [rows] = await pool.execute<MaintenanceCountRow[]>(query, [motorcycleId]);
@@ -448,7 +455,7 @@ export async function findPageByMotorcycle(motorcycleId: number, pageSize: numbe
       MA.MAMiles,
       MA.MANextMiles,
       MA.MANextDate
-    FROM MAINTENANCE MA
+    FROM maintenance MA
     WHERE MA.MOIdMoto = ?
     ORDER BY MA.MADate DESC, MA.MAMaintenance DESC
     LIMIT ? OFFSET ?
@@ -476,7 +483,7 @@ export async function findServicesByMaintenanceIds(maintenanceIds: readonly numb
 }
 
 export async function addReminder(reminderData: any) {
-  const query = `INSERT INTO reminder (MAMaintenance, REDateProgram, REType, REState, REFSend, REDescription, RETitle) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+  const query = `INSERT INTO REMINDER (MAMaintenance, REDateProgram, REType, REState, REFSend, REDescription, RETitle) VALUES (?, ?, ?, ?, ?, ?, ?)`;
 
   const [result] = await pool.execute(query, [
     reminderData.MAMaintenance,
@@ -491,16 +498,47 @@ export async function addReminder(reminderData: any) {
   return result;
 }
 
-export async function getPendingReminders(limit: number = 50): Promise<any[]> {
-  const query = `SELECT *
-        FROM reminder
-        WHERE REState = 1
+export async function claimPendingReminders(limit: number = 1): Promise<any[]> {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+    const [rows] = await connection.query<any[]>(`
+      SELECT *
+      FROM REMINDER
+      WHERE REState = 1
         AND REFSend = 'EMAIL'
         AND REDateProgram <= NOW()
-        ORDER BY REDateProgram
-        LIMIT 50`;
-  const [rows] = await pool.execute(query);
-  return rows as any[];
+        AND (REAttemptedAt IS NULL OR REAttemptedAt <= DATE_SUB(NOW(), INTERVAL ${env.REMINDER_RETRY_DELAY_SECONDS} SECOND))
+      ORDER BY REDateProgram, REIdReminder
+      LIMIT ${safeLimit}
+      FOR UPDATE SKIP LOCKED
+    `);
+    if (rows.length > 0) {
+      const ids = rows.map((row) => Number(row.REIdReminder));
+      const placeholders = ids.map(() => "?").join(", ");
+      await connection.execute(`
+        UPDATE REMINDER
+        SET REState = 4, REAttemptedAt = NOW()
+        WHERE REState = 1 AND REIdReminder IN (${placeholders})
+      `, ids);
+    }
+    await connection.commit();
+    return rows;
+  } catch (error: unknown) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function releaseReminderClaim(reminderId: number): Promise<void> {
+  await pool.execute(`
+    UPDATE REMINDER
+    SET REState = 1
+    WHERE REIdReminder = ? AND REState = 4 AND RESentAt IS NULL
+  `, [reminderId]);
 }
 
 const MAX_REMINDER_TRIES = 3;
@@ -508,20 +546,20 @@ const MAX_REMINDER_TRIES = 3;
 /** Registra el fallo; el recordatorio se reintenta hasta MAX_REMINDER_TRIES y luego queda en ERROR (3). */
 export async function markReminderFailed(reminderId: number, error: unknown): Promise<void> {
   const message = sanitizeMailErrorDetail(error);
-  const query = `UPDATE reminder
-        SET REState = IF(RETries + 1 >= ?, 3, REState),
+  const query = `UPDATE REMINDER
+        SET REState = IF(RETries + 1 >= ?, 3, 1),
             REAttemptedAt = NOW(),
             REError = ?,
             RETries = RETries + 1
-        WHERE REIdReminder = ?`;
+        WHERE REIdReminder = ? AND REState = 4`;
   await pool.execute(query, [MAX_REMINDER_TRIES, message, reminderId]);
 }
 
 export async function updateReminderState(reminderId: number, newState: number): Promise<void> {
-  const query = `UPDATE reminder SET REState = ?, REAttemptedAt = NOW(), RESentAt = IF(? = 2, NOW(), RESentAt), REError = NULL WHERE REIdReminder = ?`;
+  const query = `UPDATE REMINDER SET REState = ?, REAttemptedAt = NOW(), RESentAt = IF(? = 2, NOW(), RESentAt), REError = NULL WHERE REIdReminder = ? AND REState = 4`;
   await pool.execute(query, [newState, newState, reminderId]);
 }
 
 export async function updateReminderSubject(reminderId: number, subject: string): Promise<void> {
-  await pool.execute(`UPDATE reminder SET RETitle = ? WHERE REIdReminder = ?`, [subject, reminderId]);
+  await pool.execute(`UPDATE REMINDER SET RETitle = ? WHERE REIdReminder = ?`, [subject, reminderId]);
 }

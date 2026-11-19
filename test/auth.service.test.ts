@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
 import type { UserRow } from "../src/interfaces/database.interface.js";
 import { createLoginValidator, createTokenOperations } from "../src/services/auth.service.js";
+import { isArgon2idHash, verifyPassword } from "../src/services/password.service.js";
 
 const secret = "test-secret-with-sufficient-length";
 const sessionId = "98cdd953-e2e6-4429-8970-e5799c249fcc";
@@ -106,9 +107,11 @@ function loginUser(): UserRow {
 test("registra último acceso solamente después de un login exitoso", async () => {
   const redis = new LoginRedis();
   const updated: number[] = [];
+  let upgradedHash = "";
   let uuid = 0;
   const validate = createLoginValidator({
     async getUsersByEmail() { return [loginUser()]; },
+    async updatePasswordHash(_userId, passwordHash) { upgradedHash = passwordHash; },
     async updateLastLogin(userId) { updated.push(userId); },
     redis,
     jwtSecret: secret,
@@ -121,12 +124,15 @@ test("registra último acceso solamente después de un login exitoso", async () 
   const success = await validate("admin@example.test", "correcta-segura", "Mozilla/5.0");
   assert.equal(success.success, true);
   assert.deepEqual(updated, [7]);
+  assert.equal(isArgon2idHash(upgradedHash), true);
+  assert.equal((await verifyPassword(upgradedHash, "correcta-segura")).valid, true);
 });
 
 test("si falla guardar el último acceso invalida la sesión recién creada", async () => {
   const redis = new LoginRedis();
   const validate = createLoginValidator({
     async getUsersByEmail() { return [loginUser()]; },
+    async updatePasswordHash() {},
     async updateLastLogin() { throw new Error("database unavailable"); },
     redis,
     jwtSecret: secret,

@@ -3,11 +3,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { RespuestaCapSolver } from "../interfaces/declaraguate.interface.js";
 import type { DeclaraguateData } from "../interfaces/capsolver.interface.js";
+import { env } from "../config/env.js";
 
 const snapshotDirectory = resolve(process.cwd(), 'capturas');
 
 async function resolveCaptcha(imagenBase64: string): Promise<string> {
-  const clientKey = 'CAP-9C76A0B9513C17BDC42C7AE1E403561CA12DE60FAA6F279F900ECCB9A6C722F9';
+  const clientKey = env.CAPSOLVER_API_KEY;
 
   if (!clientKey) {
     throw new Error('CAPSOLVER_API_KEY no está configurada');
@@ -141,6 +142,10 @@ async function executeTry(data: DeclaraguateData, tryNumber: number) {
 }
 
 export async function executeDeclaraguate(datos: DeclaraguateData): Promise<{ result: boolean; message: string }> {
+  if (!env.GOVERNMENT_AUTOMATIONS_ENABLED) {
+    throw new Error('Las automatizaciones SAT y Declaraguate están deshabilitadas en este entorno');
+  }
+
   const maxTrys = 3;
   let lastError: unknown;
 
@@ -166,6 +171,10 @@ export async function executeVerificator(
   nit: string,
   tryNumber: number
 ): Promise<{ result: boolean; message: string }> {
+  if (!env.GOVERNMENT_AUTOMATIONS_ENABLED) {
+    throw new Error('Las automatizaciones SAT y Declaraguate están deshabilitadas en este entorno');
+  }
+
   await mkdir(snapshotDirectory, { recursive: true });
 
   let browser;
@@ -238,8 +247,6 @@ export async function executeVerificator(
       const solution = await resolveCaptcha(
         snapshot.toString('base64')
       );
-
-      console.log('Captcha solution:', solution);
 
       await captchaInput.fill(solution);
 

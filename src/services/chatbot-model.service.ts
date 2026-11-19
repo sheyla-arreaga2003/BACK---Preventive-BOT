@@ -49,11 +49,11 @@ export class ChatModelIncompleteError extends Error {
   }
 }
 
-const client = new OpenAI({
-  apiKey: env.OPENAI_API_KEY,
-  timeout: 30_000,
-  maxRetries: 0,
-});
+export class ChatbotDisabledError extends Error {
+  constructor() {
+    super("The chatbot is disabled");
+  }
+}
 
 interface ModelApiResponse {
   status?: string;
@@ -151,4 +151,23 @@ export function createOpenAIChatModelGateway(responses: ResponsesCreator): ChatM
   };
 }
 
-export const openAIChatModelGateway: ChatModelGateway = createOpenAIChatModelGateway(client.responses);
+function createDisabledChatModelGateway(): ChatModelGateway {
+  return {
+    async generate() {
+      throw new ChatbotDisabledError();
+    },
+  };
+}
+
+const client = env.CHATBOT_ENABLED
+  ? new OpenAI({
+    apiKey: env.OPENAI_API_KEY,
+    timeout: 30_000,
+    maxRetries: 0,
+  })
+  : null;
+
+export const openAIClientInitialized = client !== null;
+export const openAIChatModelGateway: ChatModelGateway = client
+  ? createOpenAIChatModelGateway(client.responses)
+  : createDisabledChatModelGateway();

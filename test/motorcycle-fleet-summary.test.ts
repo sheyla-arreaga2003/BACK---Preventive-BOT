@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getMotorcycleFleetSummary } from "../src/services/chatbot-read.service.js";
-import { hasRegisteredPlate } from "../src/services/motorcycle-plate-status.service.js";
+import { hasRegisteredPlate, normalizePlateForStorage } from "../src/services/motorcycle-plate-status.service.js";
 
 test("calcula totales sin joins y usa la definición unificada de placa ausente", async () => {
   let sql = "";
@@ -34,6 +34,13 @@ test("placa registrada describe presencia del dato, no entrega al cliente", () =
   assert.equal(hasRegisteredPlate("M001ABC"), true);
   assert.equal(hasRegisteredPlate("  "), false);
   assert.doesNotMatch("Con placa registrada", /entregad/i);
+});
+
+test("normaliza placas y representa una placa pendiente con NULL", () => {
+  assert.equal(normalizePlateForStorage(null), null);
+  assert.equal(normalizePlateForStorage(""), null);
+  assert.equal(normalizePlateForStorage("   "), null);
+  assert.equal(normalizePlateForStorage("  P123ABC  "), "P123ABC");
 });
 
 test("devuelve ceros cuando no existen motocicletas", async () => {

@@ -37,8 +37,11 @@ router.post("/:motorcycleId/process", authMiddleware, authorizeRoles(1), async (
   }
 });
 
-router.get("/plate/:plate", async (req, res) => {
-  const { plate } = req.params;
+router.get("/plate/:plate", authMiddleware, authorizeRoles(1), async (req, res) => {
+  const plate = req.params.plate;
+  if (typeof plate !== "string" || !plate.trim()) {
+    return res.status(400).json({ message: "Placa inválida" });
+  }
 
   try {
     const motorcycle = await getMotorcycleByPlate(plate);
@@ -50,7 +53,7 @@ router.get("/plate/:plate", async (req, res) => {
   }
 });
 
-router.get("/pendingPlates", async (req, res) => {
+router.get("/pendingPlates", authMiddleware, authorizeRoles(1), async (req, res) => {
   const { page, pageSize } = req.query;
 
   if (page && isNaN(Number(page))) {
@@ -175,7 +178,7 @@ router.post("/", authMiddleware, authorizeRoles(1), async (req, res) => {
   }
 });
 
-router.get("/", async (req, res) => {
+router.get("/", authMiddleware, authorizeRoles(1), async (req, res) => {
   const { serieInvoice, numberInvoice } = req.query;
 
   if (typeof serieInvoice !== "string" || typeof numberInvoice !== "string") {
