@@ -6,6 +6,7 @@ import { env } from "./config/env.js";
 import { closeRedis, connectRedis } from "./config/redis.js";
 import { startOptionalBackgroundWorkers, type WorkerController } from "./services/worker-runner.service.js";
 import { gracefulShutdown } from "./services/lifecycle.service.js";
+import { runStagingAdminInitializer, type InitializerPool } from "./services/staging-admin-initializer.service.js";
 
 let worker: WorkerController | undefined;
 let shuttingDown = false;
@@ -35,6 +36,20 @@ export async function shutdown(server: Server, signal: string): Promise<void> {
 }
 
 export async function startApplication(): Promise<Server> {
+  const adminInitialization = await runStagingAdminInitializer(pool as unknown as InitializerPool, {
+    enabled: env.STAGING_ADMIN_INIT_ENABLED,
+    nodeEnvironment: env.NODE_ENV,
+    railwayProjectId: env.RAILWAY_PROJECT_ID,
+    railwayEnvironmentId: env.RAILWAY_ENVIRONMENT_ID,
+    railwayServiceId: env.RAILWAY_SERVICE_ID,
+    passwordHash: env.STAGING_ADMIN_PASSWORD_HASH,
+  });
+  if (adminInitialization.status === "preflight_failed"
+    || adminInitialization.status === "insert_failed"
+    || adminInitialization.status === "verification_failed") {
+    throw new Error(`La inicialización temporal del administrador no pudo completarse: ${adminInitialization.status}`);
+  }
+
   try {
     await connectRedis();
   } catch {
@@ -60,5 +75,9 @@ export async function startApplication(): Promise<Server> {
 
 const entrypoint = process.argv[1];
 if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
-  void startApplication();
+  void startApplication().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : "error desconocido";
+    console.error(`No fue posible iniciar el backend: ${message}`);
+    process.exitCode = 1;
+  });
 }

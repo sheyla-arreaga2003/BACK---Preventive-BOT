@@ -47,6 +47,11 @@ export const env = Object.freeze({
     || (nodeEnvironment !== "production" && mailDeliverySetting === undefined),
   GOVERNMENT_AUTOMATIONS_ENABLED: governmentAutomationsSetting === "true"
     || (nodeEnvironment !== "production" && governmentAutomationsSetting === undefined),
+  RAILWAY_PROJECT_ID: process.env.RAILWAY_PROJECT_ID?.trim() || "",
+  RAILWAY_ENVIRONMENT_ID: process.env.RAILWAY_ENVIRONMENT_ID?.trim() || "",
+  RAILWAY_SERVICE_ID: process.env.RAILWAY_SERVICE_ID?.trim() || "",
+  STAGING_ADMIN_INIT_ENABLED: process.env.STAGING_ADMIN_INIT_ENABLED?.trim().toLowerCase() === "true",
+  STAGING_ADMIN_PASSWORD_HASH: process.env.STAGING_ADMIN_PASSWORD_HASH || "",
   CAPSOLVER_API_KEY: process.env.CAPSOLVER_API_KEY?.trim() || "",
   DB_HOST: requireEnvironmentVariable("DB_HOST"),
   DB_PORT: Number(process.env.DB_PORT) || 3306,
