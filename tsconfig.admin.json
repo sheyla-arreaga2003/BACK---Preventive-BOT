@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./scripts",
+    "outDir": "./dist-admin",
+    "types": ["node"]
+  },
+  "include": ["scripts/create-staging-admins.ts"],
+  "exclude": ["dist-admin", "node_modules", "test"]
+}

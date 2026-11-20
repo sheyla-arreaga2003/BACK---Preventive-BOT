@@ -16,9 +16,11 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm exec playwright install --with-deps --only-shell chromium \
     && rm -rf /var/lib/apt/lists/*
 
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.admin.json ./
+COPY scripts/create-staging-admins.ts ./scripts/create-staging-admins.ts
 COPY src ./src
 RUN pnpm build \
+    && pnpm exec tsc -p tsconfig.admin.json \
     && pnpm prune --prod \
     && pnpm store prune \
     && mkdir -p /app/capturas /app/var/chatbot-documents \

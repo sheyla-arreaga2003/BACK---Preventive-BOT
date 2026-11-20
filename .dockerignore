@@ -12,5 +12,6 @@ var/chatbot-documents
 .pnpm-store
 load-tests
 test
-scripts
+scripts/*
+!scripts/create-staging-admins.ts
 *.log
